@@ -1787,27 +1787,27 @@ export default function App() {
   }, [searchTerm]);
 
   useEffect(() => {
-    if (user || !searchTerm.trim()) {
+    if (!searchTerm.trim()) {
       return;
     }
 
     const normalizedSearch = searchTerm.trim().toLowerCase();
-    const shouldClearAutofill =
+    const isRestrictedEmail =
       normalizedSearch === lastAuthenticatedEmailRef.current ||
       ADMIN_EMAILS.includes(normalizedSearch);
 
-    if (!shouldClearAutofill) {
+    if (!isRestrictedEmail) {
       return;
     }
 
-    setSearchTerm("");
-    setSearchSuggestionsOpen(false);
+    const shouldClear = !user || !hasAdminAccess || adminAuthStep !== "authenticated";
 
-    if (searchInputRef.current) {
-      searchInputRef.current.value = "";
-      searchInputRef.current.blur();
+    if (!shouldClear) {
+      return;
     }
-  }, [searchTerm, user]);
+
+    resetSearchUi();
+  }, [searchTerm, user, hasAdminAccess, adminAuthStep]);
 
   useEffect(() => {
     if (isAdminOwner) {
@@ -1997,7 +1997,7 @@ export default function App() {
     const nextValue = event.target.value;
     const normalizedValue = nextValue.trim().toLowerCase();
     const shouldIgnoreInjectedEmail =
-      !user &&
+      (!user || !hasAdminAccess) &&
       Boolean(normalizedValue) &&
       (normalizedValue === lastAuthenticatedEmailRef.current ||
         ADMIN_EMAILS.includes(normalizedValue));
@@ -2167,6 +2167,8 @@ export default function App() {
     if (nextStep) {
       setAdminAuthStep(nextStep);
     }
+
+    resetSearchUi();
   };
 
   const startAdminSetupFlow = async () => {
@@ -2341,7 +2343,8 @@ export default function App() {
       setHasAdminAccess(true);
       applyAdminSecurityStatus(response.securityStatus);
       resetAdminChallengeState("authenticated");
-      setToast("Admin session unlocked.");
+      resetSearchUi();
+      setToast("Admin panel unlocked.");
     } catch (error) {
       setAdminSecurityError(error.message || "Unable to verify admin OTP.");
     } finally {
@@ -2350,6 +2353,7 @@ export default function App() {
   };
 
   const endAdminSession = async () => {
+    resetSearchUi();
     try {
       if (adminSessionToken) {
         await logoutAdminSession(adminSessionToken);
@@ -5221,6 +5225,7 @@ export default function App() {
                       setAdminSetupForm((prev) => ({ ...prev, password: event.target.value }))
                     }
                     placeholder="Admin password"
+                    autoComplete="new-password"
                     style={inputStyle}
                   />
                   <input
@@ -5233,6 +5238,7 @@ export default function App() {
                       }))
                     }
                     placeholder="Confirm password"
+                    autoComplete="new-password"
                     style={inputStyle}
                   />
                   <input
@@ -5242,6 +5248,7 @@ export default function App() {
                       setAdminSetupForm((prev) => ({ ...prev, pin: event.target.value }))
                     }
                     placeholder="Optional PIN (4-8 digits)"
+                    autoComplete="new-password"
                     style={inputStyle}
                   />
                   <input
@@ -5254,6 +5261,7 @@ export default function App() {
                       }))
                     }
                     placeholder="Confirm PIN"
+                    autoComplete="new-password"
                     style={inputStyle}
                   />
                   <label
@@ -5319,6 +5327,7 @@ export default function App() {
                     value={adminLoginForm.email}
                     readOnly
                     placeholder="Admin email"
+                    autoComplete="username email"
                     style={inputStyle}
                   />
                   <input
@@ -5328,6 +5337,7 @@ export default function App() {
                       setAdminLoginForm((prev) => ({ ...prev, password: event.target.value }))
                     }
                     placeholder="Admin password"
+                    autoComplete="current-password"
                     style={inputStyle}
                   />
                   <button
@@ -5350,6 +5360,7 @@ export default function App() {
                       setAdminLoginForm((prev) => ({ ...prev, pin: event.target.value }))
                     }
                     placeholder="Enter PIN"
+                    autoComplete="current-password"
                     style={inputStyle}
                   />
                   <button
