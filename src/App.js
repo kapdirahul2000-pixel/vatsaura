@@ -107,7 +107,8 @@ const initialCheckoutForm = {
   landmark: "",
   transactionId: "",
   customerName: "",
-  paymentScreenshot: ""
+  paymentScreenshot: "",
+  useAuraPoints: true
 };
 
 const emptyProductForm = {
@@ -2679,37 +2680,27 @@ export default function App() {
       return;
     }
 
-    if (paymentMethod === "upi" && !settings.upiQrData) {
-      setToast("Upload your UPI QR in admin settings before taking UPI payments.");
-      return;
-    }
+    const auraUsed = checkoutForm.useAuraPoints && user ? Math.min(auraPoints, cartTotal) : 0;
+    const remainingPayable = cartTotal - auraUsed;
+    const isFullAuraPayment = auraUsed >= cartTotal && auraUsed > 0;
 
-    if (paymentMethod === "aura") {
-      if (!user) {
-        setToast("Login first to use Aura points.");
+    if (paymentMethod === "upi" && !isFullAuraPayment) {
+      if (!settings.upiQrData) {
+        setToast("Upload your UPI QR in admin settings before taking UPI payments.");
         return;
       }
 
-      if (auraPoints < cartTotal) {
-        setToast("Not enough Aura points for this order.");
-        return;
-      }
-    }
-
-    if (paymentMethod === "upi") {
       if (!checkoutForm.transactionId?.trim() || !checkoutForm.customerName?.trim()) {
         setToast("Transaction ID and Customer Name are required for UPI payments.");
         return;
       }
 
-      // Basic UTR validation: length should be at least 12 characters (common for UPI UTR)
       const utr = checkoutForm.transactionId.trim();
       if (!/^[a-zA-Z0-9]{12,}$/.test(utr)) {
         setToast("Please enter a valid Transaction ID / UTR (at least 12 alphanumeric characters).");
         return;
       }
 
-      // Check for duplicate UTR
       const isDuplicateUtr = orders.some(
         (o) => o.paymentMethod === "upi" && o.customer?.transactionId?.trim() === utr
       );
@@ -2719,19 +2710,33 @@ export default function App() {
       }
     }
 
+    if (paymentMethod === "aura" && auraPoints < cartTotal) {
+      setToast("Not enough Aura points for this order.");
+      return;
+    }
+
     const now = Date.now();
-    const orderStatus = paymentMethod === "upi" ? "Payment Submitted" : "Pending Payment";
+    const orderId = `VA-${now.toString().slice(-6)}`;
+    let orderStatus = "Pending Payment";
     
+    if (isFullAuraPayment) {
+      orderStatus = "Paid";
+    } else if (paymentMethod === "upi") {
+      orderStatus = "Payment Submitted";
+    }
+
     const order = {
-      id: `VA-${now.toString().slice(-6)}`,
+      id: orderId,
       createdAt: now,
       dateLabel: new Date(now).toLocaleString("en-IN"),
       paymentMethod,
       status: orderStatus,
-      paymentSubmittedAt: paymentMethod === "upi" ? now : null,
-      paymentSubmittedLabel: paymentMethod === "upi" ? new Date(now).toLocaleString("en-IN") : null,
+      paymentSubmittedAt: paymentMethod === "upi" && !isFullAuraPayment ? now : null,
+      paymentSubmittedLabel: paymentMethod === "upi" && !isFullAuraPayment ? new Date(now).toLocaleString("en-IN") : null,
       items: cart,
       total: cartTotal,
+      auraPointsUsed: auraUsed,
+      remainingPayable: remainingPayable,
       customer: { ...checkoutForm },
       userEmail: user?.email || "guest@local",
       refundRequested: false,
@@ -2745,14 +2750,54 @@ export default function App() {
     setActivePage("orders");
 
     if (user) {
-      const nextAura =
-        paymentMethod === "aura"
-          ? Math.max(0, auraPoints - cartTotal)
-          : auraPoints + Math.floor(cartTotal * 0.05);
-      updateCurrentUserRecord(nextAura, cartTotal);
+      const cashback = Math.floor(cartTotal * 0.05);
+      const nextAura = auraPoints - auraUsed + cashback;
+      
+      const email = String(user.email || "").toLowerCase();
+      setUsers((prev) =>
+        prev.map((entry) => {
+          if (entry.email?.toLowerCase() !== email) {
+            return entry;
+          }
+
+          const history = [...(entry.auraHistory || [])];
+          
+          if (auraUsed > 0) {
+            history.unshift({
+              id: createId("tra"),
+              date: new Date(now).toLocaleDateString("en-IN"),
+              time: new Date(now).toLocaleTimeString("en-IN"),
+              amount: -auraUsed,
+              type: "Deduction",
+              adminName: "System",
+              reason: `Used for order payment (${orderId})`
+            });
+          }
+          
+          if (cashback > 0) {
+            history.unshift({
+              id: createId("tra"),
+              date: new Date(now).toLocaleDateString("en-IN"),
+              time: new Date(now).toLocaleTimeString("en-IN"),
+              amount: cashback,
+              type: "Deposit",
+              adminName: "System",
+              reason: `Cashback for order (${orderId})`
+            });
+          }
+
+          return {
+            ...entry,
+            auraPoints: nextAura,
+            totalSpent: Number(entry.totalSpent || 0) + cartTotal,
+            totalOrders: Number(entry.totalOrders || 0) + 1,
+            auraHistory: history
+          };
+        })
+      );
     }
 
-    setToast(`Order ${order.id} placed successfully.`);
+    setToast(`Order ${orderId} placed successfully.`);
   };
 
   const setUserFormField = (field, value) => {
@@ -4441,192 +4486,248 @@ export default function App() {
     </div>
   );
 
-  const renderPayment = () => (
-    <div style={shellStyle}>
-      {renderBackButton()}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-          gap: "24px"
-        }}
-      >
-        <section style={cardStyle}>
-          <h2 style={{ marginTop: 0 }}>Payment Methods</h2>
-          <div style={{ display: "grid", gap: "14px" }}>
-            {enabledPaymentOptions.length === 0 ? (
-              <div style={{ color: tone.muted }}>
-                No payment methods are enabled in admin settings.
-              </div>
-            ) : (
-              enabledPaymentOptions.map((option) => (
-                <div
-                  key={option.value}
-                  onClick={() => setPaymentMethod(option.value)}
-                  style={{
-                    border:
-                      paymentMethod === option.value
-                        ? `2px solid ${tone.black}`
-                        : `1px solid ${tone.border}`,
-                    borderRadius: "18px",
-                    padding: "18px",
-                    background: paymentMethod === option.value ? tone.soft : tone.white,
-                    cursor: "pointer"
-                  }}
-                >
-                  <h3 style={{ margin: "0 0 8px" }}>{option.title}</h3>
-                  <p style={{ margin: 0, color: tone.muted }}>{option.description}</p>
-                </div>
-              ))
-            )}
-          </div>
+  const renderPayment = () => {
+    const auraUsed = checkoutForm.useAuraPoints && user ? Math.min(auraPoints, cartTotal) : 0;
+    const remainingPayable = cartTotal - auraUsed;
+    const isFullAuraPayment = auraUsed >= cartTotal && auraUsed > 0;
 
-          {paymentMethod === "upi" && (
-            <div style={{ marginTop: "20px", display: "grid", gap: "16px" }}>
-              <div
+    return (
+      <div style={shellStyle}>
+        {renderBackButton()}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: "24px"
+          }}
+        >
+          <section style={cardStyle}>
+            <h2 style={{ marginTop: 0 }}>Payment Methods</h2>
+
+            {user && auraPoints > 0 && (
+              <label
                 style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  padding: "16px",
+                  borderRadius: "0px",
                   border: `1px solid ${tone.line}`,
-                  borderRadius: "20px",
-                  padding: "18px",
-                  background: tone.soft,
-                  display: "grid",
-                  gap: "14px"
+                  background: checkoutForm.useAuraPoints ? tone.soft : "transparent",
+                  marginBottom: "20px",
+                  cursor: "pointer"
                 }}
               >
-                <div style={{ textAlign: "center" }}>
-                  <h3 style={{ marginTop: 0 }}>UPI Payment</h3>
-                  <p style={{ margin: "0 0 10px", fontSize: "18px", fontWeight: 700 }}>
-                    Amount: {formatCurrency(cartTotal)}
+                <input
+                  type="checkbox"
+                  checked={checkoutForm.useAuraPoints}
+                  onChange={(e) => setCheckoutForm(prev => ({ ...prev, useAuraPoints: e.target.checked }))}
+                  style={{ width: "20px", height: "20px" }}
+                />
+                <div>
+                  <p style={{ margin: 0, fontWeight: 700 }}>Use Aura Points</p>
+                  <p style={{ margin: 0, fontSize: "13px", color: tone.muted }}>
+                    Available: {formatCurrency(auraPoints)}
                   </p>
-                  {settings.upiId && (
-                    <p style={{ margin: "0 0 14px", color: tone.muted, fontSize: "14px" }}>
-                      UPI ID: <span style={{ color: tone.black, fontWeight: 700 }}>{settings.upiId}</span>
+                </div>
+              </label>
+            )}
+
+            <div style={{ display: "grid", gap: "14px" }}>
+              {enabledPaymentOptions.length === 0 ? (
+                <div style={{ color: tone.muted }}>
+                  No payment methods are enabled in admin settings.
+                </div>
+              ) : (
+                enabledPaymentOptions.map((option) => (
+                  <div
+                    key={option.value}
+                    onClick={() => setPaymentMethod(option.value)}
+                    style={{
+                      border:
+                        paymentMethod === option.value
+                          ? `2px solid ${tone.black}`
+                          : `1px solid ${tone.border}`,
+                      borderRadius: "0px",
+                      padding: "18px",
+                      background: paymentMethod === option.value ? tone.soft : tone.white,
+                      cursor: "pointer"
+                    }}
+                  >
+                    <h3 style={{ margin: "0 0 8px" }}>{option.title}</h3>
+                    <p style={{ margin: 0, color: tone.muted }}>{option.description}</p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {paymentMethod === "upi" && !isFullAuraPayment && (
+              <div style={{ marginTop: "20px", display: "grid", gap: "16px" }}>
+                <div
+                  style={{
+                    border: `1px solid ${tone.line}`,
+                    borderRadius: "0px",
+                    padding: "18px",
+                    background: tone.soft,
+                    display: "grid",
+                    gap: "14px"
+                  }}
+                >
+                  <div style={{ textAlign: "center" }}>
+                    <h3 style={{ marginTop: 0 }}>UPI Payment</h3>
+                    <p style={{ margin: "0 0 10px", fontSize: "18px", fontWeight: 700 }}>
+                      Amount to Pay: {formatCurrency(remainingPayable)}
+                    </p>
+                    {settings.upiId && (
+                      <p style={{ margin: "0 0 14px", color: tone.muted, fontSize: "14px" }}>
+                        UPI ID: <span style={{ color: tone.black, fontWeight: 700 }}>{settings.upiId}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {settings.upiQrData ? (
+                    <div style={{ display: "grid", placeItems: "center", background: "#fff", padding: "12px", borderRadius: "0px" }}>
+                      <img
+                        src={settings.upiQrData}
+                        alt="UPI QR"
+                        style={{ width: "220px", maxWidth: "100%", filter: "none" }}
+                      />
+                    </div>
+                  ) : (
+                    <p style={{ color: tone.muted, textAlign: "center", margin: 0 }}>
+                      UPI QR not configured.
                     </p>
                   )}
                 </div>
 
-                {settings.upiQrData ? (
-                  <div style={{ display: "grid", placeItems: "center", background: "#fff", padding: "12px", borderRadius: "12px" }}>
-                    <img
-                      src={settings.upiQrData}
-                      alt="UPI QR"
-                      style={{ width: "220px", maxWidth: "100%", filter: "none" }}
-                    />
-                  </div>
-                ) : (
-                  <p style={{ color: tone.muted, textAlign: "center", margin: 0 }}>
-                    UPI QR not configured.
-                  </p>
-                )}
-              </div>
-
-              <div style={{ display: "grid", gap: "12px" }}>
-                <h4 style={{ margin: 0 }}>Payment Verification</h4>
-                <input
-                  name="customerName"
-                  value={checkoutForm.customerName}
-                  onChange={handleCheckoutChange}
-                  placeholder="Customer Name (on UPI App)"
-                  style={inputStyle}
-                />
-                <input
-                  name="transactionId"
-                  value={checkoutForm.transactionId}
-                  onChange={handleCheckoutChange}
-                  placeholder="Transaction ID / UTR (Required)"
-                  style={inputStyle}
-                />
-                <label style={{ display: "grid", gap: "6px", color: tone.muted, fontSize: "13px" }}>
-                  Upload payment screenshot (Optional)
+                <div style={{ display: "grid", gap: "12px" }}>
+                  <h4 style={{ margin: 0 }}>Payment Verification</h4>
                   <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) =>
-                      handleImageUpload(event, (dataUrl) =>
-                        setCheckoutForm((prev) => ({ ...prev, paymentScreenshot: dataUrl }))
-                      )
-                    }
+                    name="customerName"
+                    value={checkoutForm.customerName}
+                    onChange={handleCheckoutChange}
+                    placeholder="Customer Name (on UPI App)"
+                    style={inputStyle}
                   />
-                </label>
-                {checkoutForm.paymentScreenshot && (
-                  <div style={{ position: "relative", width: "80px" }}>
-                    <img
-                      src={checkoutForm.paymentScreenshot}
-                      alt="Screenshot"
-                      style={{ width: "100%", height: "100px", objectFit: "cover", borderRadius: "8px" }}
+                  <input
+                    name="transactionId"
+                    value={checkoutForm.transactionId}
+                    onChange={handleCheckoutChange}
+                    placeholder="Transaction ID / UTR (Required)"
+                    style={inputStyle}
+                  />
+                  <label style={{ display: "grid", gap: "6px", color: tone.muted, fontSize: "13px" }}>
+                    Upload payment screenshot (Optional)
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) =>
+                        handleImageUpload(event, (dataUrl) =>
+                          setCheckoutForm((prev) => ({ ...prev, paymentScreenshot: dataUrl }))
+                        )
+                      }
                     />
-                    <button
-                      onClick={() => setCheckoutForm((prev) => ({ ...prev, paymentScreenshot: "" }))}
-                      style={{
-                        position: "absolute",
-                        top: "-5px",
-                        right: "-5px",
-                        background: tone.black,
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "50%",
-                        width: "20px",
-                        height: "20px",
-                        cursor: "pointer",
-                        fontSize: "12px"
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-
-        <aside style={cardStyle}>
-          <h2 style={{ marginTop: 0 }}>Final Summary</h2>
-          <p style={{ color: tone.muted, lineHeight: 1.7 }}>
-            Deliver to: {checkoutForm.name || "Guest"}, {checkoutForm.address || "-"},{" "}
-            {checkoutForm.city || "-"} {checkoutForm.pincode || ""}
-          </p>
-          <div style={{ display: "grid", gap: "14px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>Items</span>
-              <span>{cartCount}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>Chosen payment</span>
-              <span>
-                {enabledPaymentOptions.find((option) => option.value === paymentMethod)?.title || "-"}
-              </span>
-            </div>
-            {paymentMethod === "aura" && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>Wallet balance</span>
-                <span>{formatCurrency(auraPoints)}</span>
+                  </label>
+                  {checkoutForm.paymentScreenshot && (
+                    <div style={{ position: "relative", width: "80px" }}>
+                      <img
+                        src={checkoutForm.paymentScreenshot}
+                        alt="Screenshot"
+                        style={{ width: "100%", height: "100px", objectFit: "cover", borderRadius: "0px" }}
+                      />
+                      <button
+                        onClick={() => setCheckoutForm((prev) => ({ ...prev, paymentScreenshot: "" }))}
+                        style={{
+                          position: "absolute",
+                          top: "-5px",
+                          right: "-5px",
+                          background: tone.black,
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: "50%",
+                          width: "20px",
+                          height: "20px",
+                          cursor: "pointer",
+                          fontSize: "12px"
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "20px" }}>
-              <span>Total</span>
-              <span>{formatCurrency(cartTotal)}</span>
+
+            {isFullAuraPayment && (
+              <div
+                style={{
+                  marginTop: "20px",
+                  padding: "20px",
+                  borderRadius: "0px",
+                  background: "#e8f5e9",
+                  border: "1px solid #a5d6a7",
+                  textAlign: "center"
+                }}
+              >
+                <h3 style={{ margin: "0 0 8px", color: "#2e7d32" }}>Full Aura Payment</h3>
+                <p style={{ margin: 0, color: "#2e7d32" }}>
+                  Your Aura Points cover the total amount. No UPI payment required.
+                </p>
+              </div>
+            )}
+          </section>
+
+          <aside style={cardStyle}>
+            <h2 style={{ marginTop: 0 }}>Final Summary</h2>
+            <p style={{ color: tone.muted, lineHeight: 1.7 }}>
+              Deliver to: {checkoutForm.name || "Guest"}, {checkoutForm.address || "-"},{" "}
+              {checkoutForm.city || "-"} {checkoutForm.pincode || ""}
+            </p>
+            <div style={{ display: "grid", gap: "14px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Items</span>
+                <span>{cartCount}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Total Amount</span>
+                <span>{formatCurrency(cartTotal)}</span>
+              </div>
+              {auraUsed > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#2e7d32", fontWeight: 700 }}>
+                  <span>Aura Points Used</span>
+                  <span>-{formatCurrency(auraUsed)}</span>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${tone.line}`, paddingTop: "14px", fontWeight: 800, fontSize: "20px" }}>
+                <span>{remainingPayable > 0 ? "Remaining Payment" : "Total Payable"}</span>
+                <span>{formatCurrency(remainingPayable)}</span>
+              </div>
             </div>
-          </div>
-          <button
-            onClick={placeOrder}
-            disabled={
-              paymentMethod === "upi" &&
-              (!checkoutForm.transactionId?.trim() || !checkoutForm.customerName?.trim())
-            }
-            style={{
-              ...primaryButtonStyle,
-              width: "100%",
-              marginTop: "22px",
-              opacity: (paymentMethod === "upi" && (!checkoutForm.transactionId?.trim() || !checkoutForm.customerName?.trim())) ? 0.5 : 1
-            }}
-          >
-            Place Order
-          </button>
-        </aside>
+            <button
+              onClick={placeOrder}
+              disabled={
+                paymentMethod === "upi" &&
+                !isFullAuraPayment &&
+                (!checkoutForm.transactionId?.trim() || !checkoutForm.customerName?.trim())
+              }
+              style={{
+                ...primaryButtonStyle,
+                width: "100%",
+                marginTop: "22px",
+                padding: "18px",
+                textTransform: "uppercase",
+                letterSpacing: "2px",
+                opacity: (paymentMethod === "upi" && !isFullAuraPayment && (!checkoutForm.transactionId?.trim() || !checkoutForm.customerName?.trim())) ? 0.5 : 1
+              }}
+            >
+              {isFullAuraPayment ? "Confirm with Aura Points" : "Place Order"}
+            </button>
+          </aside>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderOrders = () => {
     const visibleOrders = isAdmin
@@ -4762,7 +4863,19 @@ export default function App() {
                     </div>
                     <div>
                       <p style={{ margin: "0 0 6px", color: tone.muted }}>Total</p>
-                      <p style={{ margin: 0, fontWeight: 700 }}>{formatCurrency(order.total)}</p>
+                      <div style={{ textAlign: "right" }}>
+                        <p style={{ margin: 0, fontWeight: 700 }}>{formatCurrency(order.total)}</p>
+                        {order.auraPointsUsed > 0 && (
+                          <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#2e7d32" }}>
+                            -{formatCurrency(order.auraPointsUsed)} (Aura)
+                          </p>
+                        )}
+                        {order.remainingPayable > 0 && (
+                          <p style={{ margin: "2px 0 0", fontSize: "12px", color: tone.muted }}>
+                            Paid via UPI
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -6009,9 +6122,22 @@ export default function App() {
                             </div>
                           ))}
                         </div>
-                        <p style={{ marginTop: "16px", fontWeight: 700, fontSize: "18px" }}>
-                          Total: {formatCurrency(selectedAdminOrder.total)}
-                        </p>
+                        <div style={{ marginTop: "16px", borderTop: `1px solid ${tone.line}`, paddingTop: "16px" }}>
+                          <p style={{ margin: "0 0 6px", display: "flex", justifyContent: "space-between" }}>
+                            <span style={{ color: tone.muted }}>Items Total:</span>
+                            <span>{formatCurrency(selectedAdminOrder.total)}</span>
+                          </p>
+                          {selectedAdminOrder.auraPointsUsed > 0 && (
+                            <p style={{ margin: "0 0 6px", display: "flex", justifyContent: "space-between", color: "#2e7d32" }}>
+                              <span>Aura Points Used:</span>
+                              <span>-{formatCurrency(selectedAdminOrder.auraPointsUsed)}</span>
+                            </p>
+                          )}
+                          <p style={{ margin: 0, display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "18px" }}>
+                            <span>{selectedAdminOrder.remainingPayable > 0 ? "Payable via UPI:" : "Final Total:"}</span>
+                            <span>{formatCurrency(selectedAdminOrder.remainingPayable ?? selectedAdminOrder.total)}</span>
+                          </p>
+                        </div>
                         
                         <div style={{ display: "grid", gap: "10px", marginTop: "20px" }}>
                           <p style={{ margin: 0, color: tone.muted, fontSize: "12px", textTransform: "uppercase", letterSpacing: "1px" }}>
