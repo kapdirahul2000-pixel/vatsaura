@@ -1353,6 +1353,11 @@ export default function App() {
     enableEmailOtp: true,
     enableSmsOtp: false
   });
+  const [auraActionForm, setAuraActionForm] = useState({
+    amount: "",
+    reason: "",
+    targetUserEmail: ""
+  });
 
   const [cart, setCart] = useState(() => readStorage(STORAGE_KEYS.cart, []));
   const [wishlist, setWishlist] = useState(() =>
@@ -2640,11 +2645,24 @@ export default function App() {
           return entry;
         }
 
+        const delta = nextAuraPoints - Number(entry.auraPoints || 0);
+        const now = Date.now();
+        const transaction = {
+          id: createId("tra"),
+          date: new Date(now).toLocaleDateString("en-IN"),
+          time: new Date(now).toLocaleTimeString("en-IN"),
+          amount: delta,
+          type: delta >= 0 ? "Deposit" : "Withdrawal",
+          adminName: "System",
+          reason: delta >= 0 ? "Cashback for order" : "Order payment"
+        };
+
         return {
           ...entry,
           auraPoints: nextAuraPoints,
           totalSpent: Number(entry.totalSpent || 0) + totalSpent,
-          totalOrders: Number(entry.totalOrders || 0) + 1
+          totalOrders: Number(entry.totalOrders || 0) + 1,
+          auraHistory: [transaction, ...(entry.auraHistory || [])]
         };
       })
     );
@@ -2766,7 +2784,8 @@ export default function App() {
       photo: "",
       auraPoints: Number(userForm.auraPoints || 0),
       joinedAt: Date.now(),
-      lastLoginAt: null
+      lastLoginAt: null,
+      auraHistory: []
     };
 
     setUsers((prev) => [nextUser, ...prev]);
@@ -2814,18 +2833,63 @@ export default function App() {
     setToast("User status updated.");
   };
 
-  const updateAuraPoints = (email, delta) => {
+  const updateAuraPoints = (email, actionType) => {
+    const amount = Number(auraActionForm.amount);
+    const reason = auraActionForm.reason.trim();
+
+    if (isNaN(amount) || amount <= 0 && actionType !== "Edit") {
+      setToast("Enter a valid positive amount.");
+      return;
+    }
+
+    if (!reason) {
+      setToast("Enter a reason for this transaction.");
+      return;
+    }
+
+    const adminName = user?.name || "Admin";
+    const now = Date.now();
+
     setUsers((prev) =>
-      prev.map((entry) =>
-        entry.email?.toLowerCase() === email.toLowerCase()
-          ? {
-              ...entry,
-              auraPoints: Math.max(0, Number(entry.auraPoints || 0) + delta)
-            }
-          : entry
-      )
+      prev.map((entry) => {
+        if (entry.email?.toLowerCase() !== email.toLowerCase()) {
+          return entry;
+        }
+
+        let nextPoints = Number(entry.auraPoints || 0);
+        let delta = 0;
+
+        if (actionType === "Add") {
+          delta = amount;
+          nextPoints += amount;
+        } else if (actionType === "Deduct") {
+          delta = -amount;
+          nextPoints = Math.max(0, nextPoints - amount);
+        } else if (actionType === "Edit") {
+          delta = amount - nextPoints;
+          nextPoints = Math.max(0, amount);
+        }
+
+        const transaction = {
+          id: createId("tra"),
+          date: new Date(now).toLocaleDateString("en-IN"),
+          time: new Date(now).toLocaleTimeString("en-IN"),
+          amount: delta,
+          type: actionType === "Edit" ? "Adjustment" : (delta >= 0 ? "Deposit" : "Withdrawal"),
+          adminName,
+          reason
+        };
+
+        return {
+          ...entry,
+          auraPoints: nextPoints,
+          auraHistory: [transaction, ...(entry.auraHistory || [])]
+        };
+      })
     );
-    setToast("Aura points updated.");
+
+    setAuraActionForm({ amount: "", reason: "", targetUserEmail: "" });
+    setToast(`Aura points ${actionType.toLowerCase()}ed.`);
   };
 
   const setProductFormField = (field, value) => {
@@ -4819,6 +4883,78 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {user && currentUserRecord?.auraHistory && currentUserRecord.auraHistory.length > 0 && (
+          <div style={{ marginTop: "32px" }}>
+            <h3 style={{ margin: "0 0 16px", letterSpacing: "1px", textTransform: "uppercase", fontSize: "16px", color: tone.muted }}>
+              Aura Points History
+            </h3>
+            <div
+              style={{
+                border: `1px solid ${tone.line}`,
+                borderRadius: "20px",
+                overflow: "hidden",
+                background: tone.soft
+              }}
+            >
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                  <thead>
+                    <tr style={{ background: "rgba(0,0,0,0.02)" }}>
+                      <th style={{ padding: "16px", borderBottom: `1px solid ${tone.line}`, fontWeight: 800 }}>Date & Time</th>
+                      <th style={{ padding: "16px", borderBottom: `1px solid ${tone.line}`, fontWeight: 800 }}>Type</th>
+                      <th style={{ padding: "16px", borderBottom: `1px solid ${tone.line}`, fontWeight: 800 }}>Amount</th>
+                      <th style={{ padding: "16px", borderBottom: `1px solid ${tone.line}`, fontWeight: 800 }}>Admin</th>
+                      <th style={{ padding: "16px", borderBottom: `1px solid ${tone.line}`, fontWeight: 800 }}>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentUserRecord.auraHistory.map((tra) => (
+                      <tr key={tra.id}>
+                        <td style={{ padding: "16px", borderBottom: `1px solid ${tone.line}` }}>
+                          <span style={{ display: "block", fontSize: "14px" }}>{tra.date}</span>
+                          <span style={{ display: "block", fontSize: "12px", color: tone.muted }}>{tra.time}</span>
+                        </td>
+                        <td style={{ padding: "16px", borderBottom: `1px solid ${tone.line}` }}>
+                          <span
+                            style={{
+                              padding: "4px 10px",
+                              borderRadius: "999px",
+                              fontSize: "12px",
+                              fontWeight: 700,
+                              background: tra.type === "Deposit" ? "#e8f5e9" : tra.type === "Adjustment" ? "#fff3e0" : "#ffebee",
+                              color: tra.type === "Deposit" ? "#2e7d32" : tra.type === "Adjustment" ? "#ef6c00" : "#c62828",
+                              border: `1px solid ${tra.type === "Deposit" ? "#a5d6a7" : tra.type === "Adjustment" ? "#ffcc80" : "#ef9a9a"}`
+                            }}
+                          >
+                            {tra.type}
+                          </span>
+                        </td>
+                        <td
+                          style={{
+                            padding: "16px",
+                            borderBottom: `1px solid ${tone.line}`,
+                            fontWeight: 800,
+                            fontSize: "16px",
+                            color: tra.amount >= 0 ? "#2e7d32" : "#c62828"
+                          }}
+                        >
+                          {tra.amount >= 0 ? "+" : ""}{tra.amount}
+                        </td>
+                        <td style={{ padding: "16px", borderBottom: `1px solid ${tone.line}`, color: tone.muted, fontSize: "14px" }}>
+                          {tra.adminName}
+                        </td>
+                        <td style={{ padding: "16px", borderBottom: `1px solid ${tone.line}`, fontSize: "14px" }}>
+                          {tra.reason}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -5316,12 +5452,6 @@ export default function App() {
                             </p>
                           </div>
                           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                            <button onClick={() => updateAuraPoints(entry.email, 50)} style={secondaryButtonStyle}>
-                              +50 Aura
-                            </button>
-                            <button onClick={() => updateAuraPoints(entry.email, -50)} style={secondaryButtonStyle}>
-                              -50 Aura
-                            </button>
                             {!ADMIN_EMAILS.includes(entry.email?.toLowerCase()) && (
                               <>
                                 <button onClick={() => toggleBlockUser(entry.email)} style={secondaryButtonStyle}>
@@ -5334,6 +5464,88 @@ export default function App() {
                             )}
                           </div>
                         </div>
+
+                        <div
+                          style={{
+                            marginTop: "16px",
+                            padding: "16px",
+                            borderRadius: "14px",
+                            background: tone.soft,
+                            border: `1px solid ${tone.line}`,
+                            display: "grid",
+                            gap: "12px"
+                          }}
+                        >
+                          <p style={{ margin: 0, fontSize: "12px", color: tone.muted, textTransform: "uppercase", letterSpacing: "1px" }}>
+                            Aura Points Management
+                          </p>
+                          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                            <input
+                              placeholder="Amount"
+                              style={{ ...inputStyle, width: "100px", background: "#fff" }}
+                              value={auraActionForm.targetUserEmail === entry.email ? auraActionForm.amount : ""}
+                              onChange={(e) => setAuraActionForm(prev => ({ ...prev, amount: e.target.value, targetUserEmail: entry.email }))}
+                            />
+                            <input
+                              placeholder="Reason (Mandatory)"
+                              style={{ ...inputStyle, flex: 1, minWidth: "150px", background: "#fff" }}
+                              value={auraActionForm.targetUserEmail === entry.email ? auraActionForm.reason : ""}
+                              onChange={(e) => setAuraActionForm(prev => ({ ...prev, reason: e.target.value, targetUserEmail: entry.email }))}
+                            />
+                          </div>
+                          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                            <button
+                              onClick={() => updateAuraPoints(entry.email, "Add")}
+                              style={{ ...secondaryButtonStyle, background: "#e8f5e9", color: "#2e7d32", border: "1px solid #a5d6a7" }}
+                            >
+                              Add Points
+                            </button>
+                            <button
+                              onClick={() => updateAuraPoints(entry.email, "Deduct")}
+                              style={{ ...secondaryButtonStyle, background: "#ffebee", color: "#c62828", border: "1px solid #ef9a9a" }}
+                            >
+                              Deduct Points
+                            </button>
+                            <button
+                              onClick={() => updateAuraPoints(entry.email, "Edit")}
+                              style={{ ...secondaryButtonStyle, background: "#fff3e0", color: "#ef6c00", border: "1px solid #ffcc80" }}
+                            >
+                              Set Balance
+                            </button>
+                          </div>
+                        </div>
+
+                        {entry.auraHistory && entry.auraHistory.length > 0 && (
+                          <div style={{ marginTop: "16px" }}>
+                            <p style={{ margin: "0 0 10px", fontSize: "12px", color: tone.muted, textTransform: "uppercase", letterSpacing: "1px" }}>
+                              Transaction History
+                            </p>
+                            <div style={{ maxHeight: "200px", overflowY: "auto", border: `1px solid ${tone.line}`, borderRadius: "12px" }}>
+                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                                <thead style={{ position: "sticky", top: 0, background: tone.soft, textAlign: "left" }}>
+                                  <tr>
+                                    <th style={{ padding: "10px", borderBottom: `1px solid ${tone.line}` }}>Date</th>
+                                    <th style={{ padding: "10px", borderBottom: `1px solid ${tone.line}` }}>Amount</th>
+                                    <th style={{ padding: "10px", borderBottom: `1px solid ${tone.line}` }}>Type</th>
+                                    <th style={{ padding: "10px", borderBottom: `1px solid ${tone.line}` }}>Reason</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {entry.auraHistory.map((tra) => (
+                                    <tr key={tra.id}>
+                                      <td style={{ padding: "10px", borderBottom: `1px solid ${tone.line}` }}>{tra.date}</td>
+                                      <td style={{ padding: "10px", borderBottom: `1px solid ${tone.line}`, color: tra.amount >= 0 ? "#2e7d32" : "#c62828", fontWeight: 700 }}>
+                                        {tra.amount >= 0 ? "+" : ""}{tra.amount}
+                                      </td>
+                                      <td style={{ padding: "10px", borderBottom: `1px solid ${tone.line}` }}>{tra.type}</td>
+                                      <td style={{ padding: "10px", borderBottom: `1px solid ${tone.line}`, color: tone.muted }}>{tra.reason}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
