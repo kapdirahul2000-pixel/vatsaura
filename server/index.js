@@ -5,10 +5,20 @@ const path = require("path");
 const crypto = require("crypto");
 const https = require("https");
 const nodemailer = require("nodemailer");
+const Razorpay = require("razorpay");
+const shortid = require("shortid");
 
 dotenv.config();
+// Also try loading from the parent directory if running from the server folder
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const app = express();
+
+// Razorpay Instance (Replace with your actual keys from Razorpay dashboard)
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_placeholder_id",
+  key_secret: process.env.RAZORPAY_KEY_SECRET || "rzp_test_placeholder_secret"
+});
 
 const DEFAULT_ADMIN_EMAILS = [
   "kapdirahul2000@gmail.com",
@@ -960,6 +970,43 @@ app.post("/api/admin/security/two-factor", (req, res) => {
     });
   } catch (error) {
     res.status(400).json({ error: error.message || "Unable to update OTP preferences." });
+  }
+});
+
+// Razorpay Order Creation Endpoint
+app.post("/api/payment/create-order", async (req, res) => {
+  const { amount, currency = "INR" } = req.body;
+
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ error: "Invalid amount." });
+  }
+
+  // Check if keys are still placeholders
+  if (razorpay.key_id.includes("placeholder") || !process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_KEY_SECRET.includes("placeholder")) {
+    console.error("Razorpay Error: API keys are missing or still set to placeholders in .env");
+    return res.status(401).json({ 
+      error: "Razorpay authentication failed. Please update RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in your .env file with real keys from the Razorpay dashboard." 
+    });
+  }
+
+  const options = {
+    amount: Math.round(amount * 100), // Amount in paise (e.g., 1000 paise = 10.00 INR)
+    currency,
+    receipt: `receipt_${shortid.generate()}`,
+    payment_capture: 1 // Auto-capture payment
+  };
+
+  try {
+    const response = await razorpay.orders.create(options);
+    res.json({
+      id: response.id,
+      currency: response.currency,
+      amount: response.amount,
+      key_id: razorpay.key_id
+    });
+  } catch (error) {
+    console.error("Razorpay Order Error:", error);
+    res.status(500).json({ error: "Unable to create Razorpay order." });
   }
 });
 

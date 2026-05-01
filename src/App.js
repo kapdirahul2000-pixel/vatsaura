@@ -61,6 +61,11 @@ const paymentCatalog = [
     description: "Scan and pay using our configured UPI QR"
   },
   {
+    value: "razorpay",
+    title: "Razorpay",
+    description: "Pay securely via Card, NetBanking, UPI, or Wallets"
+  },
+  {
     value: "cod",
     title: "Cash on Delivery",
     description: "Collect payment at the time of delivery"
@@ -1359,6 +1364,7 @@ export default function App() {
     reason: "",
     targetUserEmail: ""
   });
+  const [razorpayLoading, setRazorpayLoading] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
     name: "",
@@ -1532,6 +1538,17 @@ export default function App() {
   const availableLatestDropProducts = useMemo(() => products.filter(
     (product) => !latestDropProductIds.includes(product.id)
   ), [products, latestDropProductIds]);
+
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
 
   useEffect(() => {
     usersRef.current = users;
@@ -2614,6 +2631,66 @@ export default function App() {
     setToast("Profile updated successfully.");
   };
 
+  const handleRazorpayPayment = async (amountToPay, onPaymentSuccess) => {
+    setRazorpayLoading(true);
+    try {
+      // 1. Create order on backend
+      const response = await fetch(`${process.env.REACT_APP_API_BASE_URL || "http://localhost:4000"}/api/payment/create-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amountToPay })
+      });
+
+      const orderData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(orderData.error || "Failed to initiate payment.");
+      }
+
+      // 2. Configure Razorpay options
+      const options = {
+        key: process.env.REACT_APP_RAZORPAY_KEY_ID || orderData.key_id || "rzp_test_placeholder_id",
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: siteName,
+        description: "Order Payment",
+        order_id: orderData.id,
+        handler: function (response) {
+          // 3. Payment Successful
+          onPaymentSuccess({
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_signature: response.razorpay_signature
+          });
+        },
+        prefill: {
+          name: checkoutForm.name,
+          email: user?.email,
+          contact: checkoutForm.phone
+        },
+        theme: {
+          color: tone.black
+        },
+        modal: {
+          ondismiss: function () {
+            setRazorpayLoading(false);
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", function (response) {
+        setToast(`Payment failed: ${response.error.description}`);
+        setRazorpayLoading(false);
+      });
+      rzp.open();
+    } catch (error) {
+      console.error("Razorpay Error:", error);
+      setToast(error.message || "Unable to start Razorpay payment.");
+      setRazorpayLoading(false);
+    }
+  };
+
   const loginWithGoogle = async () => {
       try {
       const provider = new GoogleAuthProvider();
@@ -2832,19 +2909,37 @@ export default function App() {
       orderStatus = "Payment Submitted";
     }
 
+    // Razorpay Integration
+    if (paymentMethod === "razorpay" && !isFullAuraPayment) {
+      handleRazorpayPayment(remainingPayable, (razorpayResponse) => {
+        finalizeOrder(orderId, "Paid", razorpayResponse);
+      });
+      return;
+    }
+
+    finalizeOrder(orderId, orderStatus);
+  };
+
+  const finalizeOrder = (orderId, orderStatus, razorpayData = null) => {
+    const now = Date.now();
+    const auraUsed = (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user)) && user ? Math.min(auraPoints, cartTotal) : 0;
+    const remainingPayable = cartTotal - auraUsed;
+    const isFullAuraPayment = auraUsed >= cartTotal && auraUsed > 0;
+
     const order = {
       id: orderId,
       createdAt: now,
       dateLabel: new Date(now).toLocaleString("en-IN"),
       paymentMethod,
       status: orderStatus,
-      paymentSubmittedAt: paymentMethod === "upi" && !isFullAuraPayment ? now : null,
-      paymentSubmittedLabel: paymentMethod === "upi" && !isFullAuraPayment ? new Date(now).toLocaleString("en-IN") : null,
+      paymentSubmittedAt: (paymentMethod === "upi" || paymentMethod === "razorpay") && !isFullAuraPayment ? now : null,
+      paymentSubmittedLabel: (paymentMethod === "upi" || paymentMethod === "razorpay") && !isFullAuraPayment ? new Date(now).toLocaleString("en-IN") : null,
       items: cart,
       total: cartTotal,
       auraPointsUsed: auraUsed,
       remainingPayable: remainingPayable,
       customer: { ...checkoutForm },
+      razorpayData,
       userEmail: user?.email || "guest@local",
       refundRequested: false,
       returnRequested: false
@@ -2908,6 +3003,7 @@ export default function App() {
     }
 
     setToast(`Order ${orderId} placed successfully.`);
+    setRazorpayLoading(false);
   };
 
   const setUserFormField = (field, value) => {
