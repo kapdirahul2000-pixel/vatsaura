@@ -1359,6 +1359,13 @@ export default function App() {
     reason: "",
     targetUserEmail: ""
   });
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    name: "",
+    phone: "",
+    gender: "",
+    birthdate: ""
+  });
 
   const [cart, setCart] = useState(() => readStorage(STORAGE_KEYS.cart, []));
   const [wishlist, setWishlist] = useState(() =>
@@ -1946,8 +1953,11 @@ export default function App() {
 
       const nextUser = {
         id: existing?.id || createId("usr"),
-        name: firebaseUser.displayName || existing?.name || email.split("@")[0],
+        name: existing?.name || firebaseUser.displayName || email.split("@")[0],
         email,
+        phone: existing?.phone || "",
+        gender: existing?.gender || "",
+        birthdate: existing?.birthdate || "",
         photo: firebaseUser.photoURL || existing?.photo || "",
         role: ADMIN_EMAILS.includes(email) ? "admin" : "customer",
         status: "active",
@@ -1978,6 +1988,10 @@ export default function App() {
       return;
     }
 
+    if (activePage === "profile") {
+      setIsEditingProfile(false);
+    }
+
     setHistory((prev) => [...prev, activePage]);
     setActivePage(page);
     setMenuOpen(false);
@@ -1986,6 +2000,9 @@ export default function App() {
   };
 
   const goBack = () => {
+    if (activePage === "profile") {
+      setIsEditingProfile(false);
+    }
     const previousPage = history[history.length - 1] || "home";
     setHistory((prev) => prev.slice(0, -1));
     setActivePage(previousPage);
@@ -1995,6 +2012,9 @@ export default function App() {
   };
 
   const goHome = () => {
+    if (activePage === "profile") {
+      setIsEditingProfile(false);
+    }
     setActivePage("home");
     setHistory([]);
     setMenuOpen(false);
@@ -2521,6 +2541,79 @@ export default function App() {
     };
   }, [activePage, isAdminOwner, adminSessionToken, applyAdminSecurityStatus]);
 
+  useEffect(() => {
+    if (!user || isEditingProfile) {
+      return;
+    }
+
+    const email = String(user.email || "").toLowerCase();
+    const existing = users.find((u) => u.email?.toLowerCase() === email);
+
+    if (existing && (
+      existing.name !== user.name ||
+      existing.phone !== user.phone ||
+      existing.gender !== user.gender ||
+      existing.birthdate !== user.birthdate
+    )) {
+      setUser((prev) => ({
+        ...prev,
+        name: existing.name,
+        phone: existing.phone,
+        gender: existing.gender,
+        birthdate: existing.birthdate
+      }));
+    }
+  }, [users, user, isEditingProfile]);
+
+  const startEditingProfile = () => {
+    if (!currentUserRecord) {
+      return;
+    }
+    setProfileForm({
+      name: currentUserRecord.name || "",
+      phone: currentUserRecord.phone || "",
+      gender: currentUserRecord.gender || "",
+      birthdate: currentUserRecord.birthdate || ""
+    });
+    setIsEditingProfile(true);
+  };
+
+  const saveProfile = () => {
+    if (!user || !currentUserRecord) {
+      return;
+    }
+
+    if (!profileForm.name.trim()) {
+      setToast("Name is required.");
+      return;
+    }
+
+    if (profileForm.phone && !/^\d{10}$/.test(profileForm.phone)) {
+      setToast("Please enter a valid 10-digit phone number.");
+      return;
+    }
+
+    const email = String(user.email || "").toLowerCase();
+    setUsers((prev) =>
+      prev.map((entry) => {
+        if (entry.email?.toLowerCase() !== email) {
+          return entry;
+        }
+
+        return {
+          ...entry,
+          name: profileForm.name.trim(),
+          phone: profileForm.phone.trim(),
+          gender: profileForm.gender,
+          birthdate: profileForm.birthdate
+        };
+      })
+    );
+
+    setIsEditingProfile(false);
+    setToast("Profile updated successfully.");
+  };
+
   const loginWithGoogle = async () => {
       try {
       const provider = new GoogleAuthProvider();
@@ -2541,6 +2634,7 @@ export default function App() {
 
       await signOut(auth);
       setUser(null);
+      setIsEditingProfile(false);
       setSelectedProductId("");
       setProductConfig(null);
       setMenuOpen(false);
@@ -4957,40 +5051,113 @@ export default function App() {
             }}
           >
             <div>
-              <h2 style={{ marginTop: 0 }}>Profile</h2>
-              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-                {user.photo ? (
-                  <img
-                    src={user.photo}
-                    alt={user.name}
-                    style={{
-                      width: "68px",
-                      height: "68px",
-                      borderRadius: "50%",
-                      objectFit: "cover",
-                      filter: "none"
-                    }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: "68px",
-                      height: "68px",
-                      borderRadius: "50%",
-                      background: tone.soft,
-                      border: `1px solid ${tone.line}`,
-                      display: "grid",
-                      placeItems: "center"
-                    }}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                <h2 style={{ margin: 0 }}>Profile</h2>
+                {!isEditingProfile && (
+                  <button
+                    onClick={startEditingProfile}
+                    style={{ ...secondaryButtonStyle, padding: "8px 16px", borderRadius: "10px", fontSize: "14px" }}
                   >
-                    <UserIcon />
-                  </div>
+                    Edit Profile
+                  </button>
                 )}
-                <div>
-                  <h3 style={{ margin: "0 0 4px" }}>{user.name}</h3>
-                  <p style={{ margin: 0, color: tone.muted }}>{user.email}</p>
-                </div>
               </div>
+
+              {isEditingProfile ? (
+                <div style={{ display: "grid", gap: "16px" }}>
+                  <div style={{ display: "grid", gap: "6px" }}>
+                    <label style={{ fontSize: "12px", color: tone.muted, fontWeight: 700, textTransform: "uppercase" }}>Full Name</label>
+                    <input
+                      value={profileForm.name}
+                      onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                      placeholder="Enter your name"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div style={{ display: "grid", gap: "6px" }}>
+                    <label style={{ fontSize: "12px", color: tone.muted, fontWeight: 700, textTransform: "uppercase" }}>Email (Read-only)</label>
+                    <input
+                      value={user.email}
+                      readOnly
+                      style={{ ...inputStyle, background: "rgba(0,0,0,0.03)", color: tone.muted, cursor: "not-allowed" }}
+                    />
+                  </div>
+                  <div style={{ display: "grid", gap: "6px" }}>
+                    <label style={{ fontSize: "12px", color: tone.muted, fontWeight: 700, textTransform: "uppercase" }}>Phone Number</label>
+                    <input
+                      value={profileForm.phone}
+                      onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                      placeholder="10-digit number"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div style={{ display: "grid", gap: "12px", gridTemplateColumns: "1fr 1fr" }}>
+                    <div style={{ display: "grid", gap: "6px" }}>
+                      <label style={{ fontSize: "12px", color: tone.muted, fontWeight: 700, textTransform: "uppercase" }}>Gender</label>
+                      <select
+                        value={profileForm.gender}
+                        onChange={(e) => setProfileForm({ ...profileForm, gender: e.target.value })}
+                        style={selectStyle}
+                      >
+                        <option value="">Select Gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div style={{ display: "grid", gap: "6px" }}>
+                      <label style={{ fontSize: "12px", color: tone.muted, fontWeight: 700, textTransform: "uppercase" }}>Birthdate</label>
+                      <input
+                        type="date"
+                        value={profileForm.birthdate}
+                        onChange={(e) => setProfileForm({ ...profileForm, birthdate: e.target.value })}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+                    <button onClick={saveProfile} style={{ ...primaryButtonStyle, flex: 1 }}>Save Changes</button>
+                    <button onClick={() => setIsEditingProfile(false)} style={{ ...secondaryButtonStyle, flex: 1 }}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                  {user.photo ? (
+                    <img
+                      src={user.photo}
+                      alt={user.name}
+                      style={{
+                        width: "68px",
+                        height: "68px",
+                        borderRadius: "50%",
+                        objectFit: "cover",
+                        filter: "none"
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: "68px",
+                        height: "68px",
+                        borderRadius: "50%",
+                        background: tone.soft,
+                        border: `1px solid ${tone.line}`,
+                        display: "grid",
+                        placeItems: "center"
+                      }}
+                    >
+                      <UserIcon />
+                    </div>
+                  )}
+                  <div>
+                    <h3 style={{ margin: "0 0 4px" }}>{currentUserRecord?.name || user.name}</h3>
+                    <p style={{ margin: 0, color: tone.muted }}>{user.email}</p>
+                    {currentUserRecord?.phone && (
+                      <p style={{ margin: "4px 0 0", fontSize: "13px", color: tone.muted }}>{currentUserRecord.phone}</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>
@@ -4998,6 +5165,8 @@ export default function App() {
               <div style={{ display: "grid", gap: "12px" }}>
                 {[
                   `Aura Points: ${formatCurrency(auraPoints)}`,
+                  `Gender: ${currentUserRecord?.gender || "Not specified"}`,
+                  `Birthdate: ${currentUserRecord?.birthdate || "Not specified"}`,
                   `Wishlist Items: ${wishlist.length}`,
                   `Orders: ${orders.filter((order) => order.userEmail === user.email).length}`,
                   `Role: ${
