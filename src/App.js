@@ -2680,7 +2680,7 @@ export default function App() {
       return;
     }
 
-    const auraUsed = checkoutForm.useAuraPoints && user ? Math.min(auraPoints, cartTotal) : 0;
+    const auraUsed = (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user)) && user ? Math.min(auraPoints, cartTotal) : 0;
     const remainingPayable = cartTotal - auraUsed;
     const isFullAuraPayment = auraUsed >= cartTotal && auraUsed > 0;
 
@@ -2751,7 +2751,9 @@ export default function App() {
 
     if (user) {
       const cashback = Math.floor(cartTotal * 0.05);
-      const nextAura = auraPoints - auraUsed + cashback;
+      // Ensure balance never goes below zero
+      const pointsAfterDeduction = Math.max(0, auraPoints - auraUsed);
+      const nextAura = pointsAfterDeduction + cashback;
       
       const email = String(user.email || "").toLowerCase();
       setUsers((prev) =>
@@ -2770,7 +2772,8 @@ export default function App() {
               amount: -auraUsed,
               type: "Deduction",
               adminName: "System",
-              reason: `Used for order payment (${orderId})`
+              reason: "Used for order payment",
+              orderId: orderId
             });
           }
           
@@ -4505,7 +4508,7 @@ export default function App() {
             <h2 style={{ marginTop: 0 }}>Payment Methods</h2>
 
             {user && auraPoints > 0 && (
-              <label
+              <div
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -4513,24 +4516,31 @@ export default function App() {
                   padding: "16px",
                   borderRadius: "0px",
                   border: `1px solid ${tone.line}`,
-                  background: checkoutForm.useAuraPoints ? tone.soft : "transparent",
-                  marginBottom: "20px",
-                  cursor: "pointer"
+                  background: (checkoutForm.useAuraPoints || paymentMethod === "upi") ? tone.soft : "transparent",
+                  marginBottom: "20px"
                 }}
               >
                 <input
                   type="checkbox"
-                  checked={checkoutForm.useAuraPoints}
+                  checked={checkoutForm.useAuraPoints || paymentMethod === "upi"}
+                  disabled={paymentMethod === "upi"}
                   onChange={(e) => setCheckoutForm(prev => ({ ...prev, useAuraPoints: e.target.checked }))}
-                  style={{ width: "20px", height: "20px" }}
+                  style={{ width: "20px", height: "20px", cursor: paymentMethod === "upi" ? "default" : "pointer" }}
                 />
-                <div>
-                  <p style={{ margin: 0, fontWeight: 700 }}>Use Aura Points</p>
+                <div style={{ flex: 1 }}>
+                  <p style={{ margin: 0, fontWeight: 700 }}>
+                    {paymentMethod === "upi" ? "Aura Points Applied" : "Use Aura Points"}
+                  </p>
                   <p style={{ margin: 0, fontSize: "13px", color: tone.muted }}>
                     Available: {formatCurrency(auraPoints)}
                   </p>
                 </div>
-              </label>
+                {paymentMethod === "upi" && (
+                  <span style={{ fontSize: "12px", color: "#2e7d32", fontWeight: 700 }}>
+                    Auto-applied for UPI
+                  </span>
+                )}
+              </div>
             )}
 
             <div style={{ display: "grid", gap: "14px" }}>
@@ -4542,7 +4552,12 @@ export default function App() {
                 enabledPaymentOptions.map((option) => (
                   <div
                     key={option.value}
-                    onClick={() => setPaymentMethod(option.value)}
+                    onClick={() => {
+                      setPaymentMethod(option.value);
+                      if (option.value === "upi" && user) {
+                        setCheckoutForm((prev) => ({ ...prev, useAuraPoints: true }));
+                      }
+                    }}
                     style={{
                       border:
                         paymentMethod === option.value
@@ -4700,7 +4715,7 @@ export default function App() {
                 </div>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${tone.line}`, paddingTop: "14px", fontWeight: 800, fontSize: "20px" }}>
-                <span>{remainingPayable > 0 ? "Remaining Payment" : "Total Payable"}</span>
+                <span>{remainingPayable > 0 ? "Remaining Amount to Pay" : "Total Payable"}</span>
                 <span>{formatCurrency(remainingPayable)}</span>
               </div>
             </div>
