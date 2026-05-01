@@ -104,7 +104,10 @@ const initialCheckoutForm = {
   address: "",
   city: "",
   pincode: "",
-  landmark: ""
+  landmark: "",
+  transactionId: "",
+  customerName: "",
+  paymentScreenshot: ""
 };
 
 const emptyProductForm = {
@@ -402,6 +405,7 @@ const defaultSettings = {
     aura: false
   },
   upiQrData: "",
+  upiId: "",
   banners: [
     {
       id: "banner-1",
@@ -1009,7 +1013,8 @@ const normalizeWishlist = (storedWishlist) => {
 
 const sumSales = (orders) =>
   orders.reduce((total, order) => {
-    if (order.status === "Refunded") {
+    const unconfirmedStatuses = ["Rejected", "Unpaid", "Refunded", "Pending Payment", "Payment Submitted"];
+    if (unconfirmedStatuses.includes(order.status)) {
       return total;
     }
 
@@ -1018,7 +1023,8 @@ const sumSales = (orders) =>
 
 const getRangeTotal = (orders, startTime) =>
   orders.reduce((total, order) => {
-    if (order.status === "Refunded" || Number(order.createdAt) < startTime) {
+    const unconfirmedStatuses = ["Rejected", "Unpaid", "Refunded", "Pending Payment", "Payment Submitted"];
+    if (unconfirmedStatuses.includes(order.status) || Number(order.createdAt) < startTime) {
       return total;
     }
 
@@ -2672,16 +2678,43 @@ export default function App() {
       }
     }
 
+    if (paymentMethod === "upi") {
+      if (!checkoutForm.transactionId?.trim() || !checkoutForm.customerName?.trim()) {
+        setToast("Transaction ID and Customer Name are required for UPI payments.");
+        return;
+      }
+
+      // Basic UTR validation: length should be at least 12 characters (common for UPI UTR)
+      const utr = checkoutForm.transactionId.trim();
+      if (!/^[a-zA-Z0-9]{12,}$/.test(utr)) {
+        setToast("Please enter a valid Transaction ID / UTR (at least 12 alphanumeric characters).");
+        return;
+      }
+
+      // Check for duplicate UTR
+      const isDuplicateUtr = orders.some(
+        (o) => o.paymentMethod === "upi" && o.customer?.transactionId?.trim() === utr
+      );
+      if (isDuplicateUtr) {
+        setToast("This Transaction ID has already been submitted.");
+        return;
+      }
+    }
+
     const now = Date.now();
+    const orderStatus = paymentMethod === "upi" ? "Payment Submitted" : "Pending Payment";
+    
     const order = {
       id: `VA-${now.toString().slice(-6)}`,
       createdAt: now,
       dateLabel: new Date(now).toLocaleString("en-IN"),
       paymentMethod,
-      status: paymentMethod === "upi" || paymentMethod === "aura" ? "Paid" : "New",
+      status: orderStatus,
+      paymentSubmittedAt: paymentMethod === "upi" ? now : null,
+      paymentSubmittedLabel: paymentMethod === "upi" ? new Date(now).toLocaleString("en-IN") : null,
       items: cart,
       total: cartTotal,
-      customer: checkoutForm,
+      customer: { ...checkoutForm },
       userEmail: user?.email || "guest@local",
       refundRequested: false,
       returnRequested: false
@@ -4385,30 +4418,100 @@ export default function App() {
           </div>
 
           {paymentMethod === "upi" && (
-            <div style={{ marginTop: "20px" }}>
-              <h3 style={{ marginTop: 0 }}>UPI QR</h3>
-              {settings.upiQrData ? (
-                <div
-                  style={{
-                    border: `1px solid ${tone.line}`,
-                    borderRadius: "20px",
-                    padding: "18px",
-                    background: tone.soft,
-                    display: "grid",
-                    placeItems: "center"
-                  }}
-                >
-                  <img
-                    src={settings.upiQrData}
-                    alt="UPI QR"
-                    style={{ width: "260px", maxWidth: "100%", filter: "none" }}
-                  />
+            <div style={{ marginTop: "20px", display: "grid", gap: "16px" }}>
+              <div
+                style={{
+                  border: `1px solid ${tone.line}`,
+                  borderRadius: "20px",
+                  padding: "18px",
+                  background: tone.soft,
+                  display: "grid",
+                  gap: "14px"
+                }}
+              >
+                <div style={{ textAlign: "center" }}>
+                  <h3 style={{ marginTop: 0 }}>UPI Payment</h3>
+                  <p style={{ margin: "0 0 10px", fontSize: "18px", fontWeight: 700 }}>
+                    Amount: {formatCurrency(cartTotal)}
+                  </p>
+                  {settings.upiId && (
+                    <p style={{ margin: "0 0 14px", color: tone.muted, fontSize: "14px" }}>
+                      UPI ID: <span style={{ color: tone.black, fontWeight: 700 }}>{settings.upiId}</span>
+                    </p>
+                  )}
                 </div>
-              ) : (
-                <p style={{ color: tone.muted, marginBottom: 0 }}>
-                  Your QR is not uploaded yet. Add it in Admin Panel &gt; Settings.
-                </p>
-              )}
+
+                {settings.upiQrData ? (
+                  <div style={{ display: "grid", placeItems: "center", background: "#fff", padding: "12px", borderRadius: "12px" }}>
+                    <img
+                      src={settings.upiQrData}
+                      alt="UPI QR"
+                      style={{ width: "220px", maxWidth: "100%", filter: "none" }}
+                    />
+                  </div>
+                ) : (
+                  <p style={{ color: tone.muted, textAlign: "center", margin: 0 }}>
+                    UPI QR not configured.
+                  </p>
+                )}
+              </div>
+
+              <div style={{ display: "grid", gap: "12px" }}>
+                <h4 style={{ margin: 0 }}>Payment Verification</h4>
+                <input
+                  name="customerName"
+                  value={checkoutForm.customerName}
+                  onChange={handleCheckoutChange}
+                  placeholder="Customer Name (on UPI App)"
+                  style={inputStyle}
+                />
+                <input
+                  name="transactionId"
+                  value={checkoutForm.transactionId}
+                  onChange={handleCheckoutChange}
+                  placeholder="Transaction ID / UTR (Required)"
+                  style={inputStyle}
+                />
+                <label style={{ display: "grid", gap: "6px", color: tone.muted, fontSize: "13px" }}>
+                  Upload payment screenshot (Optional)
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) =>
+                      handleImageUpload(event, (dataUrl) =>
+                        setCheckoutForm((prev) => ({ ...prev, paymentScreenshot: dataUrl }))
+                      )
+                    }
+                  />
+                </label>
+                {checkoutForm.paymentScreenshot && (
+                  <div style={{ position: "relative", width: "80px" }}>
+                    <img
+                      src={checkoutForm.paymentScreenshot}
+                      alt="Screenshot"
+                      style={{ width: "100%", height: "100px", objectFit: "cover", borderRadius: "8px" }}
+                    />
+                    <button
+                      onClick={() => setCheckoutForm((prev) => ({ ...prev, paymentScreenshot: "" }))}
+                      style={{
+                        position: "absolute",
+                        top: "-5px",
+                        right: "-5px",
+                        background: tone.black,
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "50%",
+                        width: "20px",
+                        height: "20px",
+                        cursor: "pointer",
+                        fontSize: "12px"
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </section>
@@ -4441,7 +4544,19 @@ export default function App() {
               <span>{formatCurrency(cartTotal)}</span>
             </div>
           </div>
-          <button onClick={placeOrder} style={{ ...primaryButtonStyle, width: "100%", marginTop: "22px" }}>
+          <button
+            onClick={placeOrder}
+            disabled={
+              paymentMethod === "upi" &&
+              (!checkoutForm.transactionId?.trim() || !checkoutForm.customerName?.trim())
+            }
+            style={{
+              ...primaryButtonStyle,
+              width: "100%",
+              marginTop: "22px",
+              opacity: (paymentMethod === "upi" && (!checkoutForm.transactionId?.trim() || !checkoutForm.customerName?.trim())) ? 0.5 : 1
+            }}
+          >
             Place Order
           </button>
         </aside>
@@ -4489,14 +4604,58 @@ export default function App() {
                       style={{
                         padding: "8px 12px",
                         borderRadius: "999px",
-                        background: tone.soft,
-                        border: `1px solid ${tone.line}`,
+                        background: 
+                          order.status === "Paid" ? "#e8f5e9" :
+                          order.status === "Rejected" ? "#ffebee" :
+                          order.status === "Unpaid" ? "#fff3e0" :
+                          tone.soft,
+                        color:
+                          order.status === "Paid" ? "#2e7d32" :
+                          order.status === "Rejected" ? "#c62828" :
+                          order.status === "Unpaid" ? "#ef6c00" :
+                          tone.body,
+                        border: `1px solid ${
+                          order.status === "Paid" ? "#a5d6a7" :
+                          order.status === "Rejected" ? "#ef9a9a" :
+                          order.status === "Unpaid" ? "#ffcc80" :
+                          tone.line
+                        }`,
                         fontWeight: 700
                       }}
                     >
                       {order.status}
                     </span>
                   </div>
+
+                  {(order.status === "Rejected" || order.status === "Unpaid") && (
+                    <div
+                      style={{
+                        marginTop: "16px",
+                        padding: "14px",
+                        borderRadius: "14px",
+                        background: order.status === "Rejected" ? "#fff5f5" : "#fffaf0",
+                        border: `1px solid ${order.status === "Rejected" ? "#feb2b2" : "#fbd38d"}`,
+                        color: order.status === "Rejected" ? "#c53030" : "#9c4221"
+                      }}
+                    >
+                      <strong>Note:</strong> {
+                        order.status === "Rejected" 
+                          ? "Your payment was rejected. This usually happens if the UTR is invalid or fake. Please contact support if you think this is a mistake."
+                          : "Your payment was marked as unpaid. Please ensure you have completed the UPI transaction and provided the correct UTR."
+                      }
+                    </div>
+                  )}
+
+                  {order.paymentMethod === "upi" && (
+                    <div style={{ marginTop: "16px", fontSize: "13px", color: tone.muted }}>
+                      <p style={{ margin: "0 0 4px" }}>
+                        Payment Details: {order.customer.customerName} | UTR: {order.customer.transactionId}
+                      </p>
+                      <p style={{ margin: 0 }}>
+                        Submitted: {order.paymentSubmittedLabel}
+                      </p>
+                    </div>
+                  )}
 
                   <div style={{ marginTop: "16px", display: "grid", gap: "10px" }}>
                     {order.items.map((item) => (
@@ -5562,9 +5721,68 @@ export default function App() {
                         }}
                       >
                         <h3 style={{ marginTop: 0 }}>{selectedAdminOrder.id}</h3>
-                        <p style={{ color: tone.muted }}>
-                          {selectedAdminOrder.dateLabel} | {selectedAdminOrder.customer.name}
-                        </p>
+                        <div style={{ display: "grid", gap: "12px", marginBottom: "18px" }}>
+                          <p style={{ margin: 0, color: tone.muted }}>
+                            Created: {selectedAdminOrder.dateLabel}
+                          </p>
+                          <p style={{ margin: 0, color: tone.muted }}>
+                            Customer: <strong>{selectedAdminOrder.customer.name}</strong> ({selectedAdminOrder.customer.phone})
+                          </p>
+                          <p style={{ margin: 0, color: tone.muted }}>
+                            Address: {selectedAdminOrder.customer.address}, {selectedAdminOrder.customer.city} {selectedAdminOrder.customer.pincode}
+                          </p>
+                        </div>
+
+                        {selectedAdminOrder.paymentMethod === "upi" && (
+                          <div
+                            style={{
+                              border: `1px solid ${tone.line}`,
+                              borderRadius: "16px",
+                              padding: "16px",
+                              marginBottom: "18px",
+                              background: tone.soft
+                            }}
+                          >
+                            <h4 style={{ marginTop: 0, marginBottom: "10px" }}>Payment Details (UPI)</h4>
+                            <div style={{ display: "grid", gap: "8px", fontSize: "14px" }}>
+                              <p style={{ margin: 0 }}>
+                                <span style={{ color: tone.muted }}>UPI Customer Name:</span>{" "}
+                                <strong>{selectedAdminOrder.customer.customerName}</strong>
+                              </p>
+                              <p style={{ margin: 0 }}>
+                                <span style={{ color: tone.muted }}>Transaction ID / UTR:</span>{" "}
+                                <strong style={{ color: "#d32f2f" }}>{selectedAdminOrder.customer.transactionId}</strong>
+                              </p>
+                              <p style={{ margin: 0 }}>
+                                <span style={{ color: tone.muted }}>Submission Date:</span>{" "}
+                                {selectedAdminOrder.paymentSubmittedLabel}
+                              </p>
+                              {selectedAdminOrder.customer.paymentScreenshot && (
+                                <div style={{ marginTop: "10px" }}>
+                                  <p style={{ margin: "0 0 6px", color: tone.muted }}>Screenshot:</p>
+                                  <a
+                                    href={selectedAdminOrder.customer.paymentScreenshot}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    <img
+                                      src={selectedAdminOrder.customer.paymentScreenshot}
+                                      alt="Payment Proof"
+                                      style={{
+                                        maxWidth: "200px",
+                                        maxHeight: "300px",
+                                        borderRadius: "8px",
+                                        border: `1px solid ${tone.line}`,
+                                        display: "block"
+                                      }}
+                                    />
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
                         <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
                           {selectedAdminOrder.items.map((item) => (
                             <div
@@ -5579,26 +5797,58 @@ export default function App() {
                             </div>
                           ))}
                         </div>
-                        <p style={{ marginTop: "16px", fontWeight: 700 }}>
+                        <p style={{ marginTop: "16px", fontWeight: 700, fontSize: "18px" }}>
                           Total: {formatCurrency(selectedAdminOrder.total)}
                         </p>
-                        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                          {[
-                            "New",
-                            "Processing",
-                            "Shipped",
-                            "Delivered",
-                            "Return Requested",
-                            "Refunded"
-                          ].map((status) => (
+                        
+                        <div style={{ display: "grid", gap: "10px", marginTop: "20px" }}>
+                          <p style={{ margin: 0, color: tone.muted, fontSize: "12px", textTransform: "uppercase", letterSpacing: "1px" }}>
+                            Quick Payment Actions
+                          </p>
+                          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                             <button
-                              key={status}
-                              onClick={() => updateOrderStatus(selectedAdminOrder.id, status)}
-                              style={secondaryButtonStyle}
+                              onClick={() => updateOrderStatus(selectedAdminOrder.id, "Paid")}
+                              style={{ ...secondaryButtonStyle, background: "#4caf50", color: "#fff", border: "none" }}
                             >
-                              {status}
+                              Mark as Paid
                             </button>
-                          ))}
+                            <button
+                              onClick={() => updateOrderStatus(selectedAdminOrder.id, "Rejected")}
+                              style={{ ...secondaryButtonStyle, background: "#f44336", color: "#fff", border: "none" }}
+                            >
+                              Mark as Rejected
+                            </button>
+                            <button
+                              onClick={() => updateOrderStatus(selectedAdminOrder.id, "Unpaid")}
+                              style={{ ...secondaryButtonStyle, background: "#ff9800", color: "#fff", border: "none" }}
+                            >
+                              Mark as Unpaid
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "grid", gap: "10px", marginTop: "20px" }}>
+                          <p style={{ margin: 0, color: tone.muted, fontSize: "12px", textTransform: "uppercase", letterSpacing: "1px" }}>
+                            Order Lifecycle
+                          </p>
+                          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                            {[
+                              "New",
+                              "Processing",
+                              "Shipped",
+                              "Delivered",
+                              "Return Requested",
+                              "Refunded"
+                            ].map((status) => (
+                              <button
+                                key={status}
+                                onClick={() => updateOrderStatus(selectedAdminOrder.id, status)}
+                                style={secondaryButtonStyle}
+                              >
+                                {status}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     ) : (
@@ -6422,7 +6672,16 @@ export default function App() {
                   </div>
 
                   <div style={{ display: "grid", gap: "12px" }}>
-                    <h3 style={{ margin: 0 }}>UPI QR Code</h3>
+                    <h3 style={{ margin: 0 }}>UPI Details</h3>
+                    <label style={{ display: "grid", gap: "8px", color: tone.muted }}>
+                      UPI ID
+                      <input
+                        value={settings.upiId || ""}
+                        onChange={(event) => updateSettingField("upiId", event.target.value)}
+                        placeholder="e.g. yourname@upi"
+                        style={inputStyle}
+                      />
+                    </label>
                     <label style={{ display: "grid", gap: "8px", color: tone.muted }}>
                       Add or replace UPI QR
                       <input
