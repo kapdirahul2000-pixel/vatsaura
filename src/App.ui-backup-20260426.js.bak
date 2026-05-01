@@ -1,0 +1,3304 @@
+import React, { useEffect, useRef, useState } from "react";
+import "./App.css";
+import { auth } from "./firebase";
+import {
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut
+} from "firebase/auth";
+import logoVideo from "./newlogo.mp4";
+
+const ADMIN_EMAILS = [
+  "kapdirahul2000@gmail.com",
+  "vastraauraplus@gmail.com"
+];
+
+const STORAGE_KEYS = {
+  cart: "vastraAuraCart",
+  wishlist: "vastraAuraWishlist",
+  orders: "vastraAuraOrders",
+  users: "vastraAuraUsers",
+  products: "vastraAuraProducts",
+  settings: "vastraAuraSettings"
+};
+
+const paymentCatalog = [
+  {
+    value: "upi",
+    title: "UPI QR",
+    description: "Scan and pay using your admin-configured UPI QR"
+  },
+  {
+    value: "cod",
+    title: "Cash on Delivery",
+    description: "Collect payment at the time of delivery"
+  },
+  {
+    value: "aura",
+    title: "Aura Points",
+    description: "Pay using the wallet balance stored on the account"
+  }
+];
+
+const sortOptions = [
+  { value: "featured", label: "Featured" },
+  { value: "priceLow", label: "Price: Low to High" },
+  { value: "priceHigh", label: "Price: High to Low" },
+  { value: "newest", label: "Newest" }
+];
+
+const initialCheckoutForm = {
+  name: "",
+  phone: "",
+  address: "",
+  city: "",
+  pincode: "",
+  landmark: ""
+};
+
+const emptyProductForm = {
+  id: "",
+  name: "",
+  department: "tshirts",
+  category: "Oversized",
+  price: "699",
+  discount: "0",
+  stock: "10",
+  description: "",
+  colors: "Black, White",
+  sizes: "S, M, L, XL",
+  badge: "New",
+  imageData: ""
+};
+
+const emptyUserForm = {
+  name: "",
+  email: "",
+  auraPoints: "0"
+};
+
+const emptyBannerForm = {
+  id: "",
+  title: "",
+  subtitle: "",
+  description: ""
+};
+
+const emptyOfferForm = {
+  id: "",
+  text: ""
+};
+
+const adminTabs = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "users", label: "Users" },
+  { key: "products", label: "Products" },
+  { key: "orders", label: "Orders" },
+  { key: "content", label: "Content" },
+  { key: "settings", label: "Settings" }
+];
+
+const defaultProducts = [
+  {
+    id: "prd-tee-1",
+    name: "Signature Oversized T-Shirt",
+    department: "tshirts",
+    category: "Oversized",
+    price: 799,
+    discount: 12,
+    stock: 28,
+    badge: "Best Seller",
+    description:
+      "Heavy cotton oversized tee made for a sharp black and white everyday drop.",
+    colors: ["Black", "White", "Ash"],
+    sizes: ["S", "M", "L", "XL"],
+    imageData: "",
+    createdAt: Date.now() - 86400000 * 5
+  },
+  {
+    id: "prd-tee-2",
+    name: "Minimal Line T-Shirt",
+    department: "tshirts",
+    category: "Graphic",
+    price: 699,
+    discount: 8,
+    stock: 18,
+    badge: "Trending",
+    description:
+      "Monochrome front graphic with a clean fit and soft hand feel.",
+    colors: ["Black", "White"],
+    sizes: ["S", "M", "L", "XL"],
+    imageData: "",
+    createdAt: Date.now() - 86400000 * 4
+  },
+  {
+    id: "prd-tee-3",
+    name: "Core Everyday T-Shirt",
+    department: "tshirts",
+    category: "Minimal",
+    price: 649,
+    discount: 0,
+    stock: 32,
+    badge: "Core",
+    description:
+      "A simple premium basic with a neat shape and versatile monochrome styling.",
+    colors: ["Black", "White", "Grey"],
+    sizes: ["S", "M", "L", "XL"],
+    imageData: "",
+    createdAt: Date.now() - 86400000 * 3
+  },
+  {
+    id: "prd-shirt-1",
+    name: "Structured Casual Shirt",
+    department: "shirts",
+    category: "Casual Shirts",
+    price: 1199,
+    discount: 10,
+    stock: 14,
+    badge: "New",
+    description:
+      "A crisp monochrome casual shirt built with easy everyday structure.",
+    colors: ["Black", "White", "Grey"],
+    sizes: ["S", "M", "L", "XL"],
+    imageData: "",
+    createdAt: Date.now() - 86400000 * 2
+  },
+  {
+    id: "prd-shirt-2",
+    name: "Sharp Formal Shirt",
+    department: "shirts",
+    category: "Formal Shirts",
+    price: 1399,
+    discount: 15,
+    stock: 10,
+    badge: "Office",
+    description:
+      "Tailored formal styling with clean lines and an understated black-white finish.",
+    colors: ["Black", "White"],
+    sizes: ["S", "M", "L", "XL"],
+    imageData: "",
+    createdAt: Date.now() - 86400000
+  },
+  {
+    id: "prd-shirt-3",
+    name: "Evening Party Shirt",
+    department: "shirts",
+    category: "Party Wear Shirts",
+    price: 1499,
+    discount: 5,
+    stock: 12,
+    badge: "Limited",
+    description:
+      "Polished evening shirt with a refined monochrome look for dressier nights.",
+    colors: ["Black", "White", "Charcoal"],
+    sizes: ["S", "M", "L", "XL"],
+    imageData: "",
+    createdAt: Date.now()
+  }
+];
+
+const defaultSettings = {
+  websiteName: "",
+  logoData: "/newlogo.mp4",
+  paymentMethods: {
+    upi: true,
+    cod: false,
+    aura: false
+  },
+  upiQrData: "",
+  banners: [
+    {
+      id: "banner-1",
+      title: "Monochrome streetwear that stays focused on the product.",
+      subtitle: "Black & White Only",
+      description:
+        "Browse T-shirts and Shirts, pick your size and colour, and check out with the payment methods enabled by the admin."
+    }
+  ],
+  offers: [
+    { id: "offer-1", text: "Free shipping on orders above Rs. 999" },
+    { id: "offer-2", text: "Extra 5 percent Aura points on prepaid orders" }
+  ]
+};
+
+const tone = {
+  black: "#050505",
+  body: "#101010",
+  white: "#ffffff",
+  panel: "#ffffff",
+  soft: "#f5f5f5",
+  muted: "#6b6b6b",
+  border: "#d8d8d8",
+  line: "#ebebeb",
+  darkLine: "#2a2a2a"
+};
+
+const readStorage = (key, fallback) => {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (error) {
+    return fallback;
+  }
+};
+
+const writeStorage = (key, value) => {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.error(error);
+  }
+};
+
+const createId = (prefix) =>
+  `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
+
+const formatCurrency = (amount) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0
+  }).format(amount);
+
+const discountPrice = (product) =>
+  Math.max(0, product.price - Math.round((product.price * product.discount) / 100));
+
+const createDefaultConfig = (product) => ({
+  color: product.colors?.[0] || "Black",
+  size: product.sizes?.[0] || "M",
+  quantity: 1
+});
+
+const normalizeProduct = (product) => ({
+  ...product,
+  colors: Array.isArray(product.colors)
+    ? product.colors
+    : String(product.colors || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+  sizes: Array.isArray(product.sizes)
+    ? product.sizes
+    : String(product.sizes || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+  price: Number(product.price) || 0,
+  discount: Number(product.discount) || 0,
+  stock: Number(product.stock) || 0,
+  createdAt: product.createdAt || Date.now(),
+  imageData: product.imageData || ""
+});
+
+const mergeAdminUsers = (storedUsers) => {
+  const safeUsers = Array.isArray(storedUsers) ? storedUsers : [];
+  const adminEntries = ADMIN_EMAILS.map((email) => {
+    const existing = safeUsers.find(
+      (item) => item.email?.toLowerCase() === email.toLowerCase()
+    );
+
+    return {
+      id: existing?.id || createId("usr"),
+      name: existing?.name || email.split("@")[0],
+      email,
+      role: "admin",
+      status: existing?.status || "active",
+      photo: existing?.photo || "",
+      auraPoints: Number(existing?.auraPoints || 0),
+      joinedAt: existing?.joinedAt || Date.now(),
+      lastLoginAt: existing?.lastLoginAt || null
+    };
+  });
+
+  const nonAdmins = safeUsers.filter(
+    (item) =>
+      !ADMIN_EMAILS.includes(String(item.email || "").toLowerCase())
+  );
+
+  return [...adminEntries, ...nonAdmins];
+};
+
+const normalizeWishlist = (storedWishlist) => {
+  if (!Array.isArray(storedWishlist)) {
+    return [];
+  }
+
+  return storedWishlist
+    .map((item) => (typeof item === "string" ? item : item?.id))
+    .filter(Boolean);
+};
+
+const sumSales = (orders) =>
+  orders.reduce((total, order) => {
+    if (order.status === "Refunded") {
+      return total;
+    }
+
+    return total + Number(order.total || 0);
+  }, 0);
+
+const getRangeTotal = (orders, startTime) =>
+  orders.reduce((total, order) => {
+    if (order.status === "Refunded" || Number(order.createdAt) < startTime) {
+      return total;
+    }
+
+    return total + Number(order.total || 0);
+  }, 0);
+
+const startOfToday = () => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+};
+
+const startOfWeek = () => {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(now.getFullYear(), now.getMonth(), diff).getTime();
+};
+
+const startOfMonth = () => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+};
+
+const fileToDataUrl = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+const iconProps = {
+  width: 18,
+  height: 18,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.8,
+  strokeLinecap: "round",
+  strokeLinejoin: "round"
+};
+
+const MenuIcon = () => (
+  <svg {...iconProps}>
+    <path d="M4 7h16" />
+    <path d="M4 12h16" />
+    <path d="M4 17h16" />
+  </svg>
+);
+
+const CloseIcon = () => (
+  <svg {...iconProps}>
+    <path d="M6 6l12 12" />
+    <path d="M18 6L6 18" />
+  </svg>
+);
+
+const SearchIcon = () => (
+  <svg {...iconProps}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M20 20l-3.5-3.5" />
+  </svg>
+);
+
+const WalletIcon = () => (
+  <svg {...iconProps}>
+    <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6.5A2.5 2.5 0 0 1 4 16.5v-9Z" />
+    <path d="M16 12h4" />
+    <circle cx="16" cy="12" r="1" />
+  </svg>
+);
+
+const HeartIcon = () => (
+  <svg {...iconProps}>
+    <path d="M12 20s-7-4.35-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.65-7 10-7 10Z" />
+  </svg>
+);
+
+const CartIcon = () => (
+  <svg {...iconProps}>
+    <path d="M3 5h2l2.5 9h9L19 8H7.5" />
+    <circle cx="10" cy="19" r="1.2" />
+    <circle cx="17" cy="19" r="1.2" />
+  </svg>
+);
+
+const UserIcon = () => (
+  <svg {...iconProps}>
+    <circle cx="12" cy="8" r="3.2" />
+    <path d="M5.5 19a6.5 6.5 0 0 1 13 0" />
+  </svg>
+);
+
+const inputStyle = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: "14px",
+  border: `1px solid ${tone.border}`,
+  background: tone.white,
+  color: tone.body,
+  outline: "none",
+  fontSize: "14px",
+  boxSizing: "border-box"
+};
+
+const textareaStyle = {
+  ...inputStyle,
+  minHeight: "104px",
+  resize: "vertical"
+};
+
+const selectStyle = {
+  ...inputStyle,
+  appearance: "none"
+};
+
+const primaryButtonStyle = {
+  border: `1px solid ${tone.black}`,
+  background: tone.black,
+  color: tone.white,
+  padding: "12px 16px",
+  borderRadius: "14px",
+  cursor: "pointer",
+  fontWeight: 700
+};
+
+const secondaryButtonStyle = {
+  border: `1px solid ${tone.border}`,
+  background: tone.white,
+  color: tone.body,
+  padding: "12px 16px",
+  borderRadius: "14px",
+  cursor: "pointer",
+  fontWeight: 700
+};
+
+const shellStyle = {
+  maxWidth: "1240px",
+  margin: "0 auto",
+  padding: "28px 20px 56px"
+};
+
+const cardStyle = {
+  background: tone.panel,
+  borderRadius: "24px",
+  border: `1px solid ${tone.line}`,
+  padding: "24px",
+  boxSizing: "border-box"
+};
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [activePage, setActivePage] = useState("home");
+  const [history, setHistory] = useState([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showTshirtMenu, setShowTshirtMenu] = useState(false);
+  const [showShirtMenu, setShowShirtMenu] = useState(false);
+  const [selectedDepartment, setSelectedDepartment] = useState("all");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("featured");
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [productConfig, setProductConfig] = useState(null);
+  const [checkoutForm, setCheckoutForm] = useState(initialCheckoutForm);
+  const [paymentMethod, setPaymentMethod] = useState("upi");
+  const [adminTab, setAdminTab] = useState("dashboard");
+  const [productForm, setProductForm] = useState(emptyProductForm);
+  const [userForm, setUserForm] = useState(emptyUserForm);
+  const [bannerForm, setBannerForm] = useState(emptyBannerForm);
+  const [offerForm, setOfferForm] = useState(emptyOfferForm);
+  const [selectedAdminOrderId, setSelectedAdminOrderId] = useState("");
+  const [toast, setToast] = useState("");
+
+  const [cart, setCart] = useState(() => readStorage(STORAGE_KEYS.cart, []));
+  const [wishlist, setWishlist] = useState(() =>
+    normalizeWishlist(readStorage(STORAGE_KEYS.wishlist, []))
+  );
+  const [orders, setOrders] = useState(() => readStorage(STORAGE_KEYS.orders, []));
+  const [products, setProducts] = useState(() =>
+    readStorage(STORAGE_KEYS.products, defaultProducts).map(normalizeProduct)
+  );
+  const [users, setUsers] = useState(() =>
+    mergeAdminUsers(readStorage(STORAGE_KEYS.users, []))
+  );
+  const [settings, setSettings] = useState(() => ({
+    ...defaultSettings,
+    ...readStorage(STORAGE_KEYS.settings, defaultSettings),
+    paymentMethods: {
+      ...defaultSettings.paymentMethods,
+      ...readStorage(STORAGE_KEYS.settings, defaultSettings).paymentMethods
+    }
+  }));
+
+  const usersRef = useRef(users);
+  const drawerRef = useRef(null);
+  const tshirtRef = useRef(null);
+  const shirtRef = useRef(null);
+
+  const userEmail = String(user?.email || "").toLowerCase();
+  const isAdmin = ADMIN_EMAILS.includes(userEmail);
+  const currentUserRecord = users.find(
+    (entry) => entry.email?.toLowerCase() === userEmail
+  );
+  const auraPoints = Number(currentUserRecord?.auraPoints || 0);
+  const selectedProduct = products.find((item) => item.id === selectedProductId) || null;
+  const enabledPaymentOptions = paymentCatalog.filter(
+    (option) => settings.paymentMethods?.[option.value]
+  );
+  const cartCount = cart.reduce((count, item) => count + Number(item.quantity || 0), 0);
+  const cartTotal = cart.reduce(
+    (total, item) => total + Number(item.unitPrice || 0) * Number(item.quantity || 0),
+    0
+  );
+  const dailySales = getRangeTotal(orders, startOfToday());
+  const weeklySales = getRangeTotal(orders, startOfWeek());
+  const monthlySales = getRangeTotal(orders, startOfMonth());
+  const totalSales = sumSales(orders);
+
+  const tshirtCategories = [
+    { value: "all", label: "All T-Shirts" },
+    ...[...new Set(products.filter((item) => item.department === "tshirts").map((item) => item.category))]
+      .filter(Boolean)
+      .map((category) => ({
+        value: category,
+        label: category
+      }))
+  ];
+
+  const shirtCategories = [
+    { value: "all", label: "All Shirts" },
+    ...[...new Set(products.filter((item) => item.department === "shirts").map((item) => item.category))]
+      .filter(Boolean)
+      .map((category) => ({
+        value: category,
+        label: category
+      }))
+  ];
+
+  const filteredProducts = products
+    .filter((product) => {
+      if (selectedDepartment !== "all" && product.department !== selectedDepartment) {
+        return false;
+      }
+
+      if (selectedCategory !== "all" && product.category !== selectedCategory) {
+        return false;
+      }
+
+      const haystack = `${product.name} ${product.department} ${product.category} ${product.description}`
+        .toLowerCase();
+
+      return haystack.includes(searchTerm.trim().toLowerCase());
+    })
+    .sort((left, right) => {
+      if (sortBy === "priceLow") {
+        return discountPrice(left) - discountPrice(right);
+      }
+
+      if (sortBy === "priceHigh") {
+        return discountPrice(right) - discountPrice(left);
+      }
+
+      if (sortBy === "newest") {
+        return Number(right.createdAt || 0) - Number(left.createdAt || 0);
+      }
+
+      return 0;
+    });
+
+  const tshirtProducts = filteredProducts.filter((item) => item.department === "tshirts");
+  const shirtProducts = filteredProducts.filter((item) => item.department === "shirts");
+  const selectedAdminOrder =
+    orders.find((order) => order.id === selectedAdminOrderId) || orders[0] || null;
+
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.cart, cart);
+  }, [cart]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.wishlist, wishlist);
+  }, [wishlist]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.orders, orders);
+  }, [orders]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.products, products);
+  }, [products]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.users, users);
+  }, [users]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.settings, settings);
+  }, [settings]);
+
+  useEffect(() => {
+    if (!toast) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setToast("");
+    }, 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!enabledPaymentOptions.some((option) => option.value === paymentMethod)) {
+      setPaymentMethod(enabledPaymentOptions[0]?.value || "");
+    }
+  }, [enabledPaymentOptions, paymentMethod]);
+
+  useEffect(() => {
+    if (!selectedProduct) {
+      return;
+    }
+
+    setProductConfig(createDefaultConfig(selectedProduct));
+  }, [selectedProduct]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (drawerRef.current && !drawerRef.current.contains(event.target)) {
+        setMenuOpen(false);
+      }
+
+      if (tshirtRef.current && !tshirtRef.current.contains(event.target)) {
+        setShowTshirtMenu(false);
+      }
+
+      if (shirtRef.current && !shirtRef.current.contains(event.target)) {
+        setShowShirtMenu(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setUser(null);
+        return;
+      }
+
+      const email = String(firebaseUser.email || "").toLowerCase();
+      const existing = usersRef.current.find(
+        (entry) => entry.email?.toLowerCase() === email
+      );
+
+      if (existing?.status === "blocked") {
+        setToast("This user is blocked by admin.");
+        await signOut(auth);
+        setUser(null);
+        return;
+      }
+
+      const nextUser = {
+        id: existing?.id || createId("usr"),
+        name: firebaseUser.displayName || existing?.name || email.split("@")[0],
+        email,
+        photo: firebaseUser.photoURL || existing?.photo || "",
+        role: ADMIN_EMAILS.includes(email) ? "admin" : "customer",
+        status: "active",
+        joinedAt: existing?.joinedAt || Date.now(),
+        lastLoginAt: Date.now(),
+        auraPoints:
+          existing?.auraPoints !== undefined
+            ? Number(existing.auraPoints)
+            : ADMIN_EMAILS.includes(email)
+              ? 0
+              : 100
+      };
+
+      setUsers((prev) => [
+        nextUser,
+        ...prev.filter((entry) => entry.email?.toLowerCase() !== email)
+      ]);
+      setUser(nextUser);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const navigateTo = (page) => {
+    if (page === activePage) {
+      setMenuOpen(false);
+      return;
+    }
+
+    setHistory((prev) => [...prev, activePage]);
+    setActivePage(page);
+    setMenuOpen(false);
+    setShowTshirtMenu(false);
+    setShowShirtMenu(false);
+  };
+
+  const goBack = () => {
+    const previousPage = history[history.length - 1] || "home";
+    setHistory((prev) => prev.slice(0, -1));
+    setActivePage(previousPage);
+    setMenuOpen(false);
+    setShowTshirtMenu(false);
+    setShowShirtMenu(false);
+  };
+
+  const goHome = () => {
+    setActivePage("home");
+    setHistory([]);
+    setMenuOpen(false);
+    setShowTshirtMenu(false);
+    setShowShirtMenu(false);
+  };
+
+  const openDepartment = (department, category = "all") => {
+    setSelectedDepartment(department);
+    setSelectedCategory(category);
+    setActivePage("home");
+    setShowTshirtMenu(false);
+    setShowShirtMenu(false);
+    setMenuOpen(false);
+  };
+
+  const loginWithGoogle = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      setMenuOpen(false);
+      setToast("Logged in successfully.");
+    } catch (error) {
+      console.error(error);
+      setToast("Login failed. Please try again.");
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await signOut(auth);
+      setUser(null);
+      setMenuOpen(false);
+      setHistory([]);
+      setActivePage("home");
+      setToast("Logged out successfully.");
+    } catch (error) {
+      console.error(error);
+      setToast("Logout failed. Please try again.");
+    }
+  };
+
+  const openProduct = (product) => {
+    setSelectedProductId(product.id);
+    setProductConfig(createDefaultConfig(product));
+    navigateTo("product");
+  };
+
+  const updateProductConfig = (field, value) => {
+    setProductConfig((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const toggleWishlist = (productId) => {
+    setWishlist((prev) =>
+      prev.includes(productId)
+        ? prev.filter((entry) => entry !== productId)
+        : [productId, ...prev]
+    );
+  };
+
+  const addConfiguredProductToCart = (product = selectedProduct, config = productConfig) => {
+    if (!product || !config) {
+      return;
+    }
+
+    const quantity = Math.max(1, Number(config.quantity || 1));
+    const unitPrice = discountPrice(product);
+    const cartItem = {
+      cartId: createId("cart"),
+      productId: product.id,
+      name: product.name,
+      department: product.department,
+      category: product.category,
+      unitPrice,
+      color: config.color,
+      size: config.size,
+      quantity
+    };
+
+    setCart((prev) => [...prev, cartItem]);
+    setToast(`${product.name} added to cart.`);
+  };
+
+  const addAndGoToCart = () => {
+    addConfiguredProductToCart();
+    navigateTo("cart");
+  };
+
+  const updateCartQuantity = (cartId, change) => {
+    setCart((prev) =>
+      prev.map((item) =>
+        item.cartId === cartId
+          ? { ...item, quantity: Math.max(1, Number(item.quantity) + change) }
+          : item
+      )
+    );
+  };
+
+  const removeFromCart = (cartId) => {
+    setCart((prev) => prev.filter((item) => item.cartId !== cartId));
+  };
+
+  const handleCheckoutChange = (event) => {
+    const { name, value } = event.target;
+    setCheckoutForm((prev) => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const proceedToPayment = () => {
+    const requiredFields = ["name", "phone", "address", "city", "pincode"];
+    const hasMissing = requiredFields.some(
+      (field) => !String(checkoutForm[field] || "").trim()
+    );
+
+    if (cart.length === 0) {
+      setToast("Add products to the cart before checkout.");
+      return;
+    }
+
+    if (hasMissing) {
+      setToast("Fill name, phone, address, city and pincode.");
+      return;
+    }
+
+    navigateTo("payment");
+  };
+
+  const updateCurrentUserRecord = (nextAuraPoints, totalSpent) => {
+    if (!user) {
+      return;
+    }
+
+    const email = String(user.email || "").toLowerCase();
+    setUsers((prev) =>
+      prev.map((entry) => {
+        if (entry.email?.toLowerCase() !== email) {
+          return entry;
+        }
+
+        return {
+          ...entry,
+          auraPoints: nextAuraPoints,
+          totalSpent: Number(entry.totalSpent || 0) + totalSpent,
+          totalOrders: Number(entry.totalOrders || 0) + 1
+        };
+      })
+    );
+  };
+
+  const placeOrder = () => {
+    if (cart.length === 0) {
+      setToast("Your cart is empty.");
+      return;
+    }
+
+    if (!paymentMethod) {
+      setToast("Enable a payment method from admin settings first.");
+      return;
+    }
+
+    if (paymentMethod === "upi" && !settings.upiQrData) {
+      setToast("Upload your UPI QR in admin settings before taking UPI payments.");
+      return;
+    }
+
+    if (paymentMethod === "aura") {
+      if (!user) {
+        setToast("Login first to use Aura points.");
+        return;
+      }
+
+      if (auraPoints < cartTotal) {
+        setToast("Not enough Aura points for this order.");
+        return;
+      }
+    }
+
+    const now = Date.now();
+    const order = {
+      id: `VA-${now.toString().slice(-6)}`,
+      createdAt: now,
+      dateLabel: new Date(now).toLocaleString("en-IN"),
+      paymentMethod,
+      status: paymentMethod === "upi" || paymentMethod === "aura" ? "Paid" : "New",
+      items: cart,
+      total: cartTotal,
+      customer: checkoutForm,
+      userEmail: user?.email || "guest@local",
+      refundRequested: false,
+      returnRequested: false
+    };
+
+    setOrders((prev) => [order, ...prev]);
+    setCart([]);
+    setCheckoutForm(initialCheckoutForm);
+    setHistory(["home"]);
+    setActivePage("orders");
+
+    if (user) {
+      const nextAura =
+        paymentMethod === "aura"
+          ? Math.max(0, auraPoints - cartTotal)
+          : auraPoints + Math.floor(cartTotal * 0.05);
+      updateCurrentUserRecord(nextAura, cartTotal);
+    }
+
+    setToast(`Order ${order.id} placed successfully.`);
+  };
+
+  const setUserFormField = (field, value) => {
+    setUserForm((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const addManualUser = () => {
+    const email = userForm.email.trim().toLowerCase();
+
+    if (!userForm.name.trim() || !email) {
+      setToast("Enter user name and email.");
+      return;
+    }
+
+    if (users.some((entry) => entry.email?.toLowerCase() === email)) {
+      setToast("This email already exists.");
+      return;
+    }
+
+    const nextUser = {
+      id: createId("usr"),
+      name: userForm.name.trim(),
+      email,
+      role: ADMIN_EMAILS.includes(email) ? "admin" : "customer",
+      status: "active",
+      photo: "",
+      auraPoints: Number(userForm.auraPoints || 0),
+      joinedAt: Date.now(),
+      lastLoginAt: null
+    };
+
+    setUsers((prev) => [nextUser, ...prev]);
+    setUserForm(emptyUserForm);
+    setToast("User added.");
+  };
+
+  const removeUser = (email) => {
+    setUsers((prev) =>
+      prev.filter((entry) => entry.email?.toLowerCase() !== email.toLowerCase())
+    );
+
+    if (user?.email?.toLowerCase() === email.toLowerCase()) {
+      logout();
+    }
+
+    setToast("User removed.");
+  };
+
+  const toggleBlockUser = (email) => {
+    let blockedCurrentUser = false;
+
+    setUsers((prev) =>
+      prev.map((entry) => {
+        if (entry.email?.toLowerCase() !== email.toLowerCase()) {
+          return entry;
+        }
+
+        const nextStatus = entry.status === "blocked" ? "active" : "blocked";
+        blockedCurrentUser =
+          nextStatus === "blocked" &&
+          user?.email?.toLowerCase() === email.toLowerCase();
+
+        return {
+          ...entry,
+          status: nextStatus
+        };
+      })
+    );
+
+    if (blockedCurrentUser) {
+      logout();
+    }
+
+    setToast("User status updated.");
+  };
+
+  const updateAuraPoints = (email, delta) => {
+    setUsers((prev) =>
+      prev.map((entry) =>
+        entry.email?.toLowerCase() === email.toLowerCase()
+          ? {
+              ...entry,
+              auraPoints: Math.max(0, Number(entry.auraPoints || 0) + delta)
+            }
+          : entry
+      )
+    );
+    setToast("Aura points updated.");
+  };
+
+  const setProductFormField = (field, value) => {
+    setProductForm((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const editProduct = (product) => {
+    setProductForm({
+      id: product.id,
+      name: product.name,
+      department: product.department,
+      category: product.category,
+      price: String(product.price),
+      discount: String(product.discount),
+      stock: String(product.stock),
+      description: product.description,
+      colors: product.colors.join(", "),
+      sizes: product.sizes.join(", "),
+      badge: product.badge || "",
+      imageData: product.imageData || ""
+    });
+    setAdminTab("products");
+  };
+
+  const saveProduct = () => {
+    if (!productForm.name.trim() || !productForm.category.trim()) {
+      setToast("Enter product name and category.");
+      return;
+    }
+
+    const nextProduct = normalizeProduct({
+      id: productForm.id || createId("prd"),
+      name: productForm.name.trim(),
+      department: productForm.department,
+      category: productForm.category.trim(),
+      price: Number(productForm.price),
+      discount: Number(productForm.discount),
+      stock: Number(productForm.stock),
+      description: productForm.description.trim(),
+      colors: productForm.colors,
+      sizes: productForm.sizes,
+      badge: productForm.badge.trim(),
+      imageData: productForm.imageData || "",
+      createdAt: productForm.id
+        ? products.find((entry) => entry.id === productForm.id)?.createdAt || Date.now()
+        : Date.now()
+    });
+
+    setProducts((prev) => {
+      const exists = prev.some((entry) => entry.id === nextProduct.id);
+      return exists
+        ? prev.map((entry) => (entry.id === nextProduct.id ? nextProduct : entry))
+        : [nextProduct, ...prev];
+    });
+
+    setProductForm(emptyProductForm);
+    setToast("Product saved.");
+  };
+
+  const deleteProduct = (productId) => {
+    setProducts((prev) => prev.filter((entry) => entry.id !== productId));
+    setWishlist((prev) => prev.filter((entry) => entry !== productId));
+    setCart((prev) => prev.filter((entry) => entry.productId !== productId));
+
+    if (selectedProductId === productId) {
+      setSelectedProductId("");
+      setActivePage("home");
+    }
+
+    setToast("Product deleted.");
+  };
+
+  const updateOrderStatus = (orderId, status) => {
+    setOrders((prev) =>
+      prev.map((entry) =>
+        entry.id === orderId
+          ? {
+              ...entry,
+              status,
+              refundRequested:
+                status === "Refund Requested" ? true : entry.refundRequested,
+              returnRequested:
+                status === "Return Requested" ? true : entry.returnRequested
+            }
+          : entry
+      )
+    );
+    setToast(`Order marked as ${status}.`);
+  };
+
+  const setBannerFormField = (field, value) => {
+    setBannerForm((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const saveBanner = () => {
+    if (!bannerForm.title.trim()) {
+      setToast("Enter banner title.");
+      return;
+    }
+
+    const nextBanner = {
+      id: bannerForm.id || createId("banner"),
+      title: bannerForm.title.trim(),
+      subtitle: bannerForm.subtitle.trim(),
+      description: bannerForm.description.trim()
+    };
+
+    setSettings((prev) => {
+      const exists = prev.banners.some((entry) => entry.id === nextBanner.id);
+      return {
+        ...prev,
+        banners: exists
+          ? prev.banners.map((entry) => (entry.id === nextBanner.id ? nextBanner : entry))
+          : [nextBanner, ...prev.banners]
+      };
+    });
+
+    setBannerForm(emptyBannerForm);
+    setToast("Banner saved.");
+  };
+
+  const editBanner = (banner) => {
+    setBannerForm(banner);
+    setAdminTab("content");
+  };
+
+  const removeBanner = (bannerId) => {
+    setSettings((prev) => ({
+      ...prev,
+      banners: prev.banners.filter((entry) => entry.id !== bannerId)
+    }));
+    setToast("Banner removed.");
+  };
+
+  const saveOffer = () => {
+    if (!offerForm.text.trim()) {
+      setToast("Enter an offer.");
+      return;
+    }
+
+    const nextOffer = {
+      id: offerForm.id || createId("offer"),
+      text: offerForm.text.trim()
+    };
+
+    setSettings((prev) => {
+      const exists = prev.offers.some((entry) => entry.id === nextOffer.id);
+      return {
+        ...prev,
+        offers: exists
+          ? prev.offers.map((entry) => (entry.id === nextOffer.id ? nextOffer : entry))
+          : [nextOffer, ...prev.offers]
+      };
+    });
+
+    setOfferForm(emptyOfferForm);
+    setToast("Offer saved.");
+  };
+
+  const editOffer = (offer) => {
+    setOfferForm(offer);
+    setAdminTab("content");
+  };
+
+  const removeOffer = (offerId) => {
+    setSettings((prev) => ({
+      ...prev,
+      offers: prev.offers.filter((entry) => entry.id !== offerId)
+    }));
+    setToast("Offer removed.");
+  };
+
+  const updateSettingField = (field, value) => {
+    setSettings((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const togglePaymentMethod = (method) => {
+    setSettings((prev) => ({
+      ...prev,
+      paymentMethods: {
+        ...prev.paymentMethods,
+        [method]: !prev.paymentMethods[method]
+      }
+    }));
+  };
+
+  const handleImageUpload = async (event, onDone) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      onDone(dataUrl);
+      setToast("Image uploaded.");
+    } catch (error) {
+      console.error(error);
+      setToast("Image upload failed.");
+    }
+  };
+
+  const heroBanner = settings.banners[0] || defaultSettings.banners[0];
+
+  const renderBackButton = () => (
+    <button onClick={goBack} style={{ ...secondaryButtonStyle, marginBottom: "20px" }}>
+      Back
+    </button>
+  );
+
+  const renderProductCard = (product) => {
+    const inWishlist = wishlist.includes(product.id);
+    const price = discountPrice(product);
+
+    return (
+      <div
+        key={product.id}
+        style={{
+          ...cardStyle,
+          padding: "18px",
+          display: "grid",
+          gap: "14px"
+        }}
+      >
+        <div
+          style={{
+            height: "220px",
+            borderRadius: "18px",
+            border: `1px solid ${tone.line}`,
+            background: tone.soft,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden"
+          }}
+        >
+          {product.imageData ? (
+            <img
+              src={product.imageData}
+              alt={product.name}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                filter: "none"
+              }}
+            />
+          ) : (
+            <div style={{ textAlign: "center", padding: "16px" }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "12px",
+                  letterSpacing: "2px",
+                  textTransform: "uppercase",
+                  color: tone.muted
+                }}
+              >
+                {product.department === "tshirts" ? "T-Shirt" : "Shirt"}
+              </p>
+              <h3 style={{ margin: "10px 0 0", fontSize: "24px" }}>{product.category}</h3>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "10px"
+            }}
+          >
+            <span
+              style={{
+                padding: "6px 10px",
+                borderRadius: "999px",
+                background: tone.black,
+                color: tone.white,
+                fontSize: "12px",
+                fontWeight: 700
+              }}
+            >
+              {product.badge || "Live"}
+            </span>
+            <span style={{ color: tone.muted, fontSize: "13px" }}>{product.stock} in stock</span>
+          </div>
+          <h3 style={{ margin: "14px 0 8px" }}>{product.name}</h3>
+          <p style={{ margin: 0, color: tone.muted, lineHeight: 1.7 }}>{product.description}</p>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            gap: "12px"
+          }}
+        >
+          <div>
+            <p style={{ margin: 0, fontWeight: 800, fontSize: "20px" }}>{formatCurrency(price)}</p>
+            {product.discount > 0 && (
+              <p style={{ margin: "4px 0 0", color: tone.muted }}>
+                <s>{formatCurrency(product.price)}</s> ({product.discount}% off)
+              </p>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button
+              onClick={() => toggleWishlist(product.id)}
+              style={secondaryButtonStyle}
+            >
+              {inWishlist ? "Saved" : "Save"}
+            </button>
+            <button onClick={() => openProduct(product)} style={primaryButtonStyle}>
+              View
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderCatalogSection = (title, sectionProducts, departmentKey, menuItems) => (
+    <section style={{ marginTop: "28px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "12px",
+          marginBottom: "16px"
+        }}
+      >
+        <div>
+          <h2 style={{ margin: "0 0 6px" }}>{title}</h2>
+          <p style={{ margin: 0, color: tone.muted }}>
+            Same structure, clean routing, black-and-white-only presentation.
+          </p>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+          {menuItems.map((item) => (
+            <button
+              key={item.value}
+              onClick={() => openDepartment(departmentKey, item.value)}
+              style={{
+                ...secondaryButtonStyle,
+                background:
+                  selectedDepartment === departmentKey && selectedCategory === item.value
+                    ? tone.black
+                    : tone.white,
+                color:
+                  selectedDepartment === departmentKey && selectedCategory === item.value
+                    ? tone.white
+                    : tone.body
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {sectionProducts.length === 0 ? (
+        <div style={{ ...cardStyle, color: tone.muted }}>
+          No products found for this selection.
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+            gap: "18px"
+          }}
+        >
+          {sectionProducts.map((product) => renderProductCard(product))}
+        </div>
+      )}
+    </section>
+  );
+
+  const renderHome = () => (
+    <div style={shellStyle}>
+      <section
+        style={{
+          ...cardStyle,
+          background: tone.black,
+          color: tone.white,
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gap: "24px"
+        }}
+      >
+        <div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "12px",
+              letterSpacing: "3px",
+              textTransform: "uppercase",
+              color: "#cfcfcf"
+            }}
+          >
+            {heroBanner.subtitle}
+          </p>
+          <h1 style={{ margin: "12px 0 14px", fontSize: "44px", lineHeight: 1.08 }}>
+            {heroBanner.title}
+          </h1>
+          <p style={{ margin: 0, maxWidth: "560px", color: "#d8d8d8", lineHeight: 1.7 }}>
+            {heroBanner.description}
+          </p>
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginTop: "24px" }}>
+            <button
+              onClick={() => openDepartment("tshirts", "all")}
+              style={{
+                ...secondaryButtonStyle,
+                background: tone.white,
+                color: tone.black,
+                border: `1px solid ${tone.white}`
+              }}
+            >
+              Shop T-Shirts
+            </button>
+            <button
+              onClick={() => openDepartment("shirts", "all")}
+              style={{
+                ...secondaryButtonStyle,
+                background: "transparent",
+                color: tone.white,
+                border: `1px solid ${tone.darkLine}`
+              }}
+            >
+              Shop Shirts
+            </button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            border: `1px solid ${tone.darkLine}`,
+            borderRadius: "22px",
+            padding: "22px",
+            background: "#121212"
+          }}
+        >
+          <p style={{ margin: "0 0 14px", color: "#d8d8d8", fontWeight: 700 }}>Live Store Status</p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(120px, 1fr))",
+              gap: "12px"
+            }}
+          >
+            {[
+              `${products.length} products`,
+              `${orders.length} orders`,
+              `${users.length} users`,
+              `${enabledPaymentOptions.length} payment methods`
+            ].map((item) => (
+              <div
+                key={item}
+                style={{
+                  border: `1px solid ${tone.darkLine}`,
+                  borderRadius: "16px",
+                  padding: "14px",
+                  background: "#090909"
+                }}
+              >
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section style={{ ...cardStyle, marginTop: "24px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "16px",
+            flexWrap: "wrap"
+          }}
+        >
+          <div>
+            <h2 style={{ margin: "0 0 8px" }}>Offers</h2>
+            <p style={{ margin: 0, color: tone.muted }}>Managed from the admin content panel.</p>
+          </div>
+          <div style={{ minWidth: "220px" }}>
+            <select
+              value={sortBy}
+              onChange={(event) => setSortBy(event.target.value)}
+              style={selectStyle}
+            >
+              {sortOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: "14px",
+            marginTop: "18px"
+          }}
+        >
+          {settings.offers.map((offer) => (
+            <div
+              key={offer.id}
+              style={{
+                border: `1px solid ${tone.line}`,
+                borderRadius: "18px",
+                padding: "16px",
+                background: tone.soft
+              }}
+            >
+              {offer.text}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {renderCatalogSection("T-Shirts", tshirtProducts, "tshirts", tshirtCategories)}
+      {renderCatalogSection("Shirts", shirtProducts, "shirts", shirtCategories)}
+    </div>
+  );
+
+  const renderProductPage = () => {
+    if (!selectedProduct || !productConfig) {
+      return (
+        <div style={shellStyle}>
+          {renderBackButton()}
+          <div style={cardStyle}>The selected product is no longer available.</div>
+        </div>
+      );
+    }
+
+    const finalPrice = discountPrice(selectedProduct);
+
+    return (
+      <div style={shellStyle}>
+        {renderBackButton()}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: "24px"
+          }}
+        >
+          <section style={cardStyle}>
+            <div
+              style={{
+                height: "420px",
+                borderRadius: "20px",
+                background: tone.soft,
+                border: `1px solid ${tone.line}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden"
+              }}
+            >
+              {selectedProduct.imageData ? (
+                <img
+                  src={selectedProduct.imageData}
+                  alt={selectedProduct.name}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    filter: "none"
+                  }}
+                />
+              ) : (
+                <div style={{ textAlign: "center", padding: "16px" }}>
+                  <p style={{ margin: 0, color: tone.muted, letterSpacing: "2px" }}>
+                    {selectedProduct.department === "tshirts" ? "T-SHIRT" : "SHIRT"}
+                  </p>
+                  <h2 style={{ margin: "10px 0 0", fontSize: "36px" }}>{selectedProduct.category}</h2>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section style={cardStyle}>
+            <p style={{ marginTop: 0, color: tone.muted, textTransform: "uppercase", letterSpacing: "2px" }}>
+              {selectedProduct.department === "tshirts" ? "T-Shirt" : "Shirt"} / {selectedProduct.category}
+            </p>
+            <h1 style={{ margin: "8px 0 10px" }}>{selectedProduct.name}</h1>
+            <p style={{ margin: 0, color: tone.muted, lineHeight: 1.8 }}>
+              {selectedProduct.description}
+            </p>
+
+            <div style={{ marginTop: "20px", display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "26px", fontWeight: 800 }}>{formatCurrency(finalPrice)}</span>
+              {selectedProduct.discount > 0 && (
+                <span style={{ color: tone.muted }}>
+                  <s>{formatCurrency(selectedProduct.price)}</s> ({selectedProduct.discount}% off)
+                </span>
+              )}
+            </div>
+
+            <div style={{ marginTop: "24px" }}>
+              <p style={{ margin: "0 0 10px", fontWeight: 700 }}>Colours</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                {selectedProduct.colors.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => updateProductConfig("color", color)}
+                    style={{
+                      ...secondaryButtonStyle,
+                      background: productConfig.color === color ? tone.black : tone.white,
+                      color: productConfig.color === color ? tone.white : tone.body
+                    }}
+                  >
+                    {color}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginTop: "20px" }}>
+              <p style={{ margin: "0 0 10px", fontWeight: 700 }}>Sizes</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                {selectedProduct.sizes.map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => updateProductConfig("size", size)}
+                    style={{
+                      ...secondaryButtonStyle,
+                      background: productConfig.size === size ? tone.black : tone.white,
+                      color: productConfig.size === size ? tone.white : tone.body
+                    }}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginTop: "20px", maxWidth: "120px" }}>
+              <p style={{ margin: "0 0 10px", fontWeight: 700 }}>Quantity</p>
+              <input
+                type="number"
+                min="1"
+                value={productConfig.quantity}
+                onChange={(event) => updateProductConfig("quantity", event.target.value)}
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginTop: "28px" }}>
+              <button onClick={() => addConfiguredProductToCart()} style={secondaryButtonStyle}>
+                Add to Cart
+              </button>
+              <button onClick={addAndGoToCart} style={primaryButtonStyle}>
+                Buy Now
+              </button>
+              <button
+                onClick={() => toggleWishlist(selectedProduct.id)}
+                style={secondaryButtonStyle}
+              >
+                {wishlist.includes(selectedProduct.id) ? "Saved in Wishlist" : "Save to Wishlist"}
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  };
+
+  const renderWishlist = () => {
+    const wishlistProducts = products.filter((product) => wishlist.includes(product.id));
+
+    return (
+      <div style={shellStyle}>
+        {renderBackButton()}
+        <div style={cardStyle}>
+          <h2 style={{ marginTop: 0 }}>Wishlist</h2>
+          {wishlistProducts.length === 0 ? (
+            <p style={{ margin: 0, color: tone.muted }}>
+              No saved products yet.
+            </p>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                gap: "18px"
+              }}
+            >
+              {wishlistProducts.map((product) => renderProductCard(product))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCart = () => (
+    <div style={shellStyle}>
+      {renderBackButton()}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gap: "24px"
+        }}
+      >
+        <section style={cardStyle}>
+          <h2 style={{ marginTop: 0 }}>Cart</h2>
+          {cart.length === 0 ? (
+            <>
+              <p style={{ color: tone.muted }}>Your cart is empty.</p>
+              <button onClick={goHome} style={primaryButtonStyle}>
+                Continue Shopping
+              </button>
+            </>
+          ) : (
+            <div style={{ display: "grid", gap: "14px" }}>
+              {cart.map((item) => (
+                <div
+                  key={item.cartId}
+                  style={{
+                    border: `1px solid ${tone.line}`,
+                    borderRadius: "18px",
+                    padding: "18px"
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: "14px"
+                    }}
+                  >
+                    <div>
+                      <h3 style={{ margin: "0 0 8px" }}>{item.name}</h3>
+                      <p style={{ margin: "4px 0", color: tone.muted }}>
+                        {item.color} | {item.size} | Qty {item.quantity}
+                      </p>
+                      <p style={{ margin: 0, fontWeight: 700 }}>{formatCurrency(item.unitPrice * item.quantity)}</p>
+                    </div>
+                    <button onClick={() => removeFromCart(item.cartId)} style={secondaryButtonStyle}>
+                      Remove
+                    </button>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "10px", marginTop: "14px" }}>
+                    <button onClick={() => updateCartQuantity(item.cartId, -1)} style={secondaryButtonStyle}>
+                      -
+                    </button>
+                    <div
+                      style={{
+                        minWidth: "60px",
+                        borderRadius: "12px",
+                        background: tone.soft,
+                        display: "grid",
+                        placeItems: "center",
+                        fontWeight: 700
+                      }}
+                    >
+                      {item.quantity}
+                    </div>
+                    <button onClick={() => updateCartQuantity(item.cartId, 1)} style={secondaryButtonStyle}>
+                      +
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <aside style={cardStyle}>
+          <h2 style={{ marginTop: 0 }}>Order Summary</h2>
+          <div style={{ display: "grid", gap: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Items</span>
+              <span>{cartCount}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Shipping</span>
+              <span>Free</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "20px" }}>
+              <span>Total</span>
+              <span>{formatCurrency(cartTotal)}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => navigateTo("checkout")}
+            style={{ ...primaryButtonStyle, width: "100%", marginTop: "22px" }}
+            disabled={cart.length === 0}
+          >
+            Proceed to Checkout
+          </button>
+        </aside>
+      </div>
+    </div>
+  );
+
+  const renderCheckout = () => (
+    <div style={shellStyle}>
+      {renderBackButton()}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gap: "24px"
+        }}
+      >
+        <section style={cardStyle}>
+          <h2 style={{ marginTop: 0 }}>Checkout Details</h2>
+          <div style={{ display: "grid", gap: "14px" }}>
+            <input name="name" value={checkoutForm.name} onChange={handleCheckoutChange} placeholder="Full name" style={inputStyle} />
+            <input name="phone" value={checkoutForm.phone} onChange={handleCheckoutChange} placeholder="Phone number" style={inputStyle} />
+            <input name="address" value={checkoutForm.address} onChange={handleCheckoutChange} placeholder="Full address" style={inputStyle} />
+            <input name="city" value={checkoutForm.city} onChange={handleCheckoutChange} placeholder="City" style={inputStyle} />
+            <input name="pincode" value={checkoutForm.pincode} onChange={handleCheckoutChange} placeholder="Pincode" style={inputStyle} />
+            <input name="landmark" value={checkoutForm.landmark} onChange={handleCheckoutChange} placeholder="Landmark (optional)" style={inputStyle} />
+          </div>
+        </section>
+
+        <aside style={cardStyle}>
+          <h2 style={{ marginTop: 0 }}>Delivery Summary</h2>
+          <div style={{ display: "grid", gap: "12px" }}>
+            {cart.map((item) => (
+              <div
+                key={item.cartId}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                  paddingBottom: "12px",
+                  borderBottom: `1px solid ${tone.line}`
+                }}
+              >
+                <div>
+                  <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{item.name}</p>
+                  <p style={{ margin: 0, color: tone.muted }}>
+                    {item.size} | {item.color} | Qty {item.quantity}
+                  </p>
+                </div>
+                <span>{formatCurrency(item.unitPrice * item.quantity)}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: "16px", fontWeight: 800 }}>
+            <span>Total</span>
+            <span>{formatCurrency(cartTotal)}</span>
+          </div>
+          <button onClick={proceedToPayment} style={{ ...primaryButtonStyle, width: "100%", marginTop: "22px" }}>
+            Continue to Payment
+          </button>
+        </aside>
+      </div>
+    </div>
+  );
+
+  const renderPayment = () => (
+    <div style={shellStyle}>
+      {renderBackButton()}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gap: "24px"
+        }}
+      >
+        <section style={cardStyle}>
+          <h2 style={{ marginTop: 0 }}>Payment Methods</h2>
+          <div style={{ display: "grid", gap: "14px" }}>
+            {enabledPaymentOptions.length === 0 ? (
+              <div style={{ color: tone.muted }}>
+                No payment methods are enabled in admin settings.
+              </div>
+            ) : (
+              enabledPaymentOptions.map((option) => (
+                <div
+                  key={option.value}
+                  onClick={() => setPaymentMethod(option.value)}
+                  style={{
+                    border:
+                      paymentMethod === option.value
+                        ? `2px solid ${tone.black}`
+                        : `1px solid ${tone.border}`,
+                    borderRadius: "18px",
+                    padding: "18px",
+                    background: paymentMethod === option.value ? tone.soft : tone.white,
+                    cursor: "pointer"
+                  }}
+                >
+                  <h3 style={{ margin: "0 0 8px" }}>{option.title}</h3>
+                  <p style={{ margin: 0, color: tone.muted }}>{option.description}</p>
+                </div>
+              ))
+            )}
+          </div>
+
+          {paymentMethod === "upi" && (
+            <div style={{ marginTop: "20px" }}>
+              <h3 style={{ marginTop: 0 }}>UPI QR</h3>
+              {settings.upiQrData ? (
+                <div
+                  style={{
+                    border: `1px solid ${tone.line}`,
+                    borderRadius: "20px",
+                    padding: "18px",
+                    background: tone.soft,
+                    display: "grid",
+                    placeItems: "center"
+                  }}
+                >
+                  <img
+                    src={settings.upiQrData}
+                    alt="UPI QR"
+                    style={{ width: "260px", maxWidth: "100%", filter: "none" }}
+                  />
+                </div>
+              ) : (
+                <p style={{ color: tone.muted, marginBottom: 0 }}>
+                  Your QR is not uploaded yet. Add it in Admin Panel &gt; Settings.
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+
+        <aside style={cardStyle}>
+          <h2 style={{ marginTop: 0 }}>Final Summary</h2>
+          <p style={{ color: tone.muted, lineHeight: 1.7 }}>
+            Deliver to: {checkoutForm.name || "Guest"}, {checkoutForm.address || "-"},{" "}
+            {checkoutForm.city || "-"} {checkoutForm.pincode || ""}
+          </p>
+          <div style={{ display: "grid", gap: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Items</span>
+              <span>{cartCount}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Chosen payment</span>
+              <span>
+                {enabledPaymentOptions.find((option) => option.value === paymentMethod)?.title || "-"}
+              </span>
+            </div>
+            {paymentMethod === "aura" && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Wallet balance</span>
+                <span>{formatCurrency(auraPoints)}</span>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "20px" }}>
+              <span>Total</span>
+              <span>{formatCurrency(cartTotal)}</span>
+            </div>
+          </div>
+          <button onClick={placeOrder} style={{ ...primaryButtonStyle, width: "100%", marginTop: "22px" }}>
+            Place Order
+          </button>
+        </aside>
+      </div>
+    </div>
+  );
+
+  const renderOrders = () => {
+    const visibleOrders = isAdmin
+      ? orders
+      : orders.filter((order) => order.userEmail === (user?.email || "guest@local"));
+
+    return (
+      <div style={shellStyle}>
+        {renderBackButton()}
+        <div style={cardStyle}>
+          <h2 style={{ marginTop: 0 }}>{isAdmin ? "All Orders" : "My Orders"}</h2>
+          {visibleOrders.length === 0 ? (
+            <p style={{ margin: 0, color: tone.muted }}>No orders yet.</p>
+          ) : (
+            <div style={{ display: "grid", gap: "18px" }}>
+              {visibleOrders.map((order) => (
+                <div
+                  key={order.id}
+                  style={{
+                    border: `1px solid ${tone.line}`,
+                    borderRadius: "18px",
+                    padding: "20px"
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                      flexWrap: "wrap"
+                    }}
+                  >
+                    <div>
+                      <h3 style={{ margin: "0 0 6px" }}>{order.id}</h3>
+                      <p style={{ margin: 0, color: tone.muted }}>{order.dateLabel}</p>
+                    </div>
+                    <span
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "999px",
+                        background: tone.soft,
+                        border: `1px solid ${tone.line}`,
+                        fontWeight: 700
+                      }}
+                    >
+                      {order.status}
+                    </span>
+                  </div>
+
+                  <div style={{ marginTop: "16px", display: "grid", gap: "10px" }}>
+                    {order.items.map((item) => (
+                      <div
+                        key={item.cartId}
+                        style={{
+                          padding: "14px",
+                          borderRadius: "14px",
+                          background: tone.soft
+                        }}
+                      >
+                        <strong>{item.name}</strong>
+                        <p style={{ margin: "6px 0 0", color: tone.muted }}>
+                          {item.color} | {item.size} | Qty {item.quantity}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      flexWrap: "wrap",
+                      gap: "12px",
+                      marginTop: "16px"
+                    }}
+                  >
+                    <div>
+                      <p style={{ margin: "0 0 6px", color: tone.muted }}>Delivery</p>
+                      <p style={{ margin: 0 }}>
+                        {order.customer.name}, {order.customer.address}, {order.customer.city}
+                      </p>
+                    </div>
+                    <div>
+                      <p style={{ margin: "0 0 6px", color: tone.muted }}>Payment</p>
+                      <p style={{ margin: 0 }}>
+                        {paymentCatalog.find((option) => option.value === order.paymentMethod)?.title}
+                      </p>
+                    </div>
+                    <div>
+                      <p style={{ margin: "0 0 6px", color: tone.muted }}>Total</p>
+                      <p style={{ margin: 0, fontWeight: 700 }}>{formatCurrency(order.total)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderWallet = () => (
+    <div style={shellStyle}>
+      {renderBackButton()}
+      <div style={{ ...cardStyle, background: tone.black, color: tone.white }}>
+        <p style={{ marginTop: 0, letterSpacing: "3px", textTransform: "uppercase", color: "#cfcfcf" }}>
+          Wallet
+        </p>
+        <h2 style={{ margin: "8px 0 6px", fontSize: "42px" }}>{formatCurrency(auraPoints)}</h2>
+        <p style={{ margin: 0, color: "#d8d8d8", lineHeight: 1.7 }}>
+          Aura points are managed from the admin panel and can be used at checkout when the payment method is enabled.
+        </p>
+      </div>
+    </div>
+  );
+
+  const renderProfile = () => (
+    <div style={shellStyle}>
+      {renderBackButton()}
+      <div style={cardStyle}>
+        {!user ? (
+          <>
+            <h2 style={{ marginTop: 0 }}>Profile</h2>
+            <p style={{ color: tone.muted }}>Login to view your profile and wallet.</p>
+            <button onClick={loginWithGoogle} style={primaryButtonStyle}>
+              Continue with Google
+            </button>
+          </>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: "24px"
+            }}
+          >
+            <div>
+              <h2 style={{ marginTop: 0 }}>Profile</h2>
+              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                {user.photo ? (
+                  <img
+                    src={user.photo}
+                    alt={user.name}
+                    style={{
+                      width: "68px",
+                      height: "68px",
+                      borderRadius: "50%",
+                      objectFit: "cover",
+                      filter: "none"
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: "68px",
+                      height: "68px",
+                      borderRadius: "50%",
+                      background: tone.soft,
+                      border: `1px solid ${tone.line}`,
+                      display: "grid",
+                      placeItems: "center"
+                    }}
+                  >
+                    <UserIcon />
+                  </div>
+                )}
+                <div>
+                  <h3 style={{ margin: "0 0 4px" }}>{user.name}</h3>
+                  <p style={{ margin: 0, color: tone.muted }}>{user.email}</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 style={{ marginTop: 0 }}>Account Summary</h3>
+              <div style={{ display: "grid", gap: "12px" }}>
+                {[
+                  `Aura Points: ${formatCurrency(auraPoints)}`,
+                  `Wishlist Items: ${wishlist.length}`,
+                  `Orders: ${orders.filter((order) => order.userEmail === user.email).length}`,
+                  `Role: ${isAdmin ? "Admin" : "Customer"}`
+                ].map((item) => (
+                  <div
+                    key={item}
+                    style={{
+                      padding: "14px",
+                      borderRadius: "14px",
+                      border: `1px solid ${tone.line}`,
+                      background: tone.soft
+                    }}
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderAdmin = () => {
+    if (!isAdmin) {
+      return (
+        <div style={shellStyle}>
+          {renderBackButton()}
+          <div style={cardStyle}>
+            <h2 style={{ marginTop: 0 }}>Admin Panel</h2>
+            <p style={{ color: tone.muted }}>
+              Only these Google accounts can access the admin panel:
+              {" "}
+              {ADMIN_EMAILS.join(", ")}.
+            </p>
+            {!user && (
+              <button onClick={loginWithGoogle} style={primaryButtonStyle}>
+                Login with Google
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={shellStyle}>
+        {renderBackButton()}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "260px 1fr",
+            gap: "22px"
+          }}
+        >
+          <aside style={cardStyle}>
+            <h2 style={{ marginTop: 0 }}>Admin Panel</h2>
+            <p style={{ marginTop: 0, color: tone.muted }}>
+              Protected by Google login + admin email allowlist.
+            </p>
+            <div style={{ display: "grid", gap: "10px" }}>
+              {adminTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setAdminTab(tab.key)}
+                  style={{
+                    ...secondaryButtonStyle,
+                    textAlign: "left",
+                    background: adminTab === tab.key ? tone.black : tone.white,
+                    color: adminTab === tab.key ? tone.white : tone.body
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          <section style={cardStyle}>
+            {adminTab === "dashboard" && (
+              <>
+                <h2 style={{ marginTop: 0 }}>Dashboard</h2>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                    gap: "14px"
+                  }}
+                >
+                  {[
+                    { label: "Total Users", value: users.length },
+                    { label: "Total Sales", value: formatCurrency(totalSales) },
+                    { label: "Daily Report", value: formatCurrency(dailySales) },
+                    { label: "Weekly Report", value: formatCurrency(weeklySales) },
+                    { label: "Monthly Report", value: formatCurrency(monthlySales) },
+                    { label: "Total Orders", value: orders.length }
+                  ].map((stat) => (
+                    <div
+                      key={stat.label}
+                      style={{
+                        border: `1px solid ${tone.line}`,
+                        borderRadius: "18px",
+                        padding: "18px",
+                        background: tone.soft
+                      }}
+                    >
+                      <p style={{ margin: "0 0 8px", color: tone.muted }}>{stat.label}</p>
+                      <h3 style={{ margin: 0 }}>{stat.value}</h3>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {adminTab === "users" && (
+              <>
+                <h2 style={{ marginTop: 0 }}>User Management</h2>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(260px, 320px) 1fr",
+                    gap: "20px"
+                  }}
+                >
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    <input
+                      value={userForm.name}
+                      onChange={(event) => setUserFormField("name", event.target.value)}
+                      placeholder="Full name"
+                      style={inputStyle}
+                    />
+                    <input
+                      value={userForm.email}
+                      onChange={(event) => setUserFormField("email", event.target.value)}
+                      placeholder="Email"
+                      style={inputStyle}
+                    />
+                    <input
+                      value={userForm.auraPoints}
+                      onChange={(event) => setUserFormField("auraPoints", event.target.value)}
+                      placeholder="Initial Aura points"
+                      style={inputStyle}
+                    />
+                    <button onClick={addManualUser} style={primaryButtonStyle}>
+                      Add User
+                    </button>
+                  </div>
+
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    {users.map((entry) => (
+                      <div
+                        key={entry.email}
+                        style={{
+                          border: `1px solid ${tone.line}`,
+                          borderRadius: "18px",
+                          padding: "16px"
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: "12px",
+                            flexWrap: "wrap"
+                          }}
+                        >
+                          <div>
+                            <h3 style={{ margin: "0 0 4px" }}>{entry.name}</h3>
+                            <p style={{ margin: 0, color: tone.muted }}>
+                              {entry.email} | {entry.role} | {entry.status}
+                            </p>
+                            <p style={{ margin: "6px 0 0" }}>
+                              Aura Points: {formatCurrency(Number(entry.auraPoints || 0))}
+                            </p>
+                          </div>
+                          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                            <button onClick={() => updateAuraPoints(entry.email, 50)} style={secondaryButtonStyle}>
+                              +50 Aura
+                            </button>
+                            <button onClick={() => updateAuraPoints(entry.email, -50)} style={secondaryButtonStyle}>
+                              -50 Aura
+                            </button>
+                            {!ADMIN_EMAILS.includes(entry.email?.toLowerCase()) && (
+                              <>
+                                <button onClick={() => toggleBlockUser(entry.email)} style={secondaryButtonStyle}>
+                                  {entry.status === "blocked" ? "Unblock" : "Block"}
+                                </button>
+                                <button onClick={() => removeUser(entry.email)} style={secondaryButtonStyle}>
+                                  Remove
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {adminTab === "products" && (
+              <>
+                <h2 style={{ marginTop: 0 }}>Product Management</h2>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(280px, 360px) 1fr",
+                    gap: "20px"
+                  }}
+                >
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    <input value={productForm.name} onChange={(event) => setProductFormField("name", event.target.value)} placeholder="Product name" style={inputStyle} />
+                    <select value={productForm.department} onChange={(event) => setProductFormField("department", event.target.value)} style={selectStyle}>
+                      <option value="tshirts">T-Shirts</option>
+                      <option value="shirts">Shirts</option>
+                    </select>
+                    <input value={productForm.category} onChange={(event) => setProductFormField("category", event.target.value)} placeholder="Category" style={inputStyle} />
+                    <textarea value={productForm.description} onChange={(event) => setProductFormField("description", event.target.value)} placeholder="Description" style={textareaStyle} />
+                    <input value={productForm.colors} onChange={(event) => setProductFormField("colors", event.target.value)} placeholder="Colours: Black, White" style={inputStyle} />
+                    <input value={productForm.sizes} onChange={(event) => setProductFormField("sizes", event.target.value)} placeholder="Sizes: S, M, L, XL" style={inputStyle} />
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
+                      <input value={productForm.price} onChange={(event) => setProductFormField("price", event.target.value)} placeholder="Price" style={inputStyle} />
+                      <input value={productForm.discount} onChange={(event) => setProductFormField("discount", event.target.value)} placeholder="Discount" style={inputStyle} />
+                      <input value={productForm.stock} onChange={(event) => setProductFormField("stock", event.target.value)} placeholder="Stock" style={inputStyle} />
+                    </div>
+                    <input value={productForm.badge} onChange={(event) => setProductFormField("badge", event.target.value)} placeholder="Badge" style={inputStyle} />
+                    <label style={{ display: "grid", gap: "8px", color: tone.muted }}>
+                      Upload product image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) =>
+                          handleImageUpload(event, (dataUrl) =>
+                            setProductFormField("imageData", dataUrl)
+                          )
+                        }
+                      />
+                    </label>
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                      <button onClick={saveProduct} style={primaryButtonStyle}>
+                        {productForm.id ? "Update Product" : "Add Product"}
+                      </button>
+                      <button onClick={() => setProductForm(emptyProductForm)} style={secondaryButtonStyle}>
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    {products.map((product) => (
+                      <div
+                        key={product.id}
+                        style={{
+                          border: `1px solid ${tone.line}`,
+                          borderRadius: "18px",
+                          padding: "16px"
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: "12px",
+                            flexWrap: "wrap"
+                          }}
+                        >
+                          <div>
+                            <h3 style={{ margin: "0 0 4px" }}>{product.name}</h3>
+                            <p style={{ margin: 0, color: tone.muted }}>
+                              {product.department} | {product.category}
+                            </p>
+                            <p style={{ margin: "6px 0 0" }}>
+                              {formatCurrency(discountPrice(product))} | Stock {product.stock}
+                            </p>
+                          </div>
+                          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                            <button onClick={() => editProduct(product)} style={secondaryButtonStyle}>
+                              Edit
+                            </button>
+                            <button onClick={() => deleteProduct(product.id)} style={secondaryButtonStyle}>
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {adminTab === "orders" && (
+              <>
+                <h2 style={{ marginTop: 0 }}>Order Management</h2>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(260px, 340px) 1fr",
+                    gap: "20px"
+                  }}
+                >
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    {orders.map((order) => (
+                      <button
+                        key={order.id}
+                        onClick={() => setSelectedAdminOrderId(order.id)}
+                        style={{
+                          ...secondaryButtonStyle,
+                          textAlign: "left",
+                          background:
+                            selectedAdminOrder?.id === order.id ? tone.black : tone.white,
+                          color:
+                            selectedAdminOrder?.id === order.id ? tone.white : tone.body
+                        }}
+                      >
+                        {order.id}
+                        <br />
+                        <span style={{ fontSize: "12px", opacity: 0.8 }}>{order.status}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div>
+                    {selectedAdminOrder ? (
+                      <div
+                        style={{
+                          border: `1px solid ${tone.line}`,
+                          borderRadius: "18px",
+                          padding: "18px"
+                        }}
+                      >
+                        <h3 style={{ marginTop: 0 }}>{selectedAdminOrder.id}</h3>
+                        <p style={{ color: tone.muted }}>
+                          {selectedAdminOrder.dateLabel} | {selectedAdminOrder.customer.name}
+                        </p>
+                        <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
+                          {selectedAdminOrder.items.map((item) => (
+                            <div
+                              key={item.cartId}
+                              style={{
+                                padding: "12px",
+                                borderRadius: "14px",
+                                background: tone.soft
+                              }}
+                            >
+                              {item.name} | {item.size} | {item.color} | Qty {item.quantity}
+                            </div>
+                          ))}
+                        </div>
+                        <p style={{ marginTop: "16px", fontWeight: 700 }}>
+                          Total: {formatCurrency(selectedAdminOrder.total)}
+                        </p>
+                        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                          {[
+                            "New",
+                            "Processing",
+                            "Shipped",
+                            "Delivered",
+                            "Return Requested",
+                            "Refunded"
+                          ].map((status) => (
+                            <button
+                              key={status}
+                              onClick={() => updateOrderStatus(selectedAdminOrder.id, status)}
+                              style={secondaryButtonStyle}
+                            >
+                              {status}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p style={{ color: tone.muted }}>No orders available.</p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {adminTab === "content" && (
+              <>
+                <h2 style={{ marginTop: 0 }}>Website Content Management</h2>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(280px, 360px) 1fr",
+                    gap: "20px"
+                  }}
+                >
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    <input value={bannerForm.title} onChange={(event) => setBannerFormField("title", event.target.value)} placeholder="Banner title" style={inputStyle} />
+                    <input value={bannerForm.subtitle} onChange={(event) => setBannerFormField("subtitle", event.target.value)} placeholder="Banner subtitle" style={inputStyle} />
+                    <textarea value={bannerForm.description} onChange={(event) => setBannerFormField("description", event.target.value)} placeholder="Banner description" style={textareaStyle} />
+                    <button onClick={saveBanner} style={primaryButtonStyle}>
+                      {bannerForm.id ? "Update Banner" : "Add Banner"}
+                    </button>
+
+                    <input value={offerForm.text} onChange={(event) => setOfferForm((prev) => ({ ...prev, text: event.target.value }))} placeholder="Offer text" style={inputStyle} />
+                    <button onClick={saveOffer} style={primaryButtonStyle}>
+                      {offerForm.id ? "Update Offer" : "Add Offer"}
+                    </button>
+                  </div>
+
+                  <div style={{ display: "grid", gap: "18px" }}>
+                    <div>
+                      <h3 style={{ marginTop: 0 }}>Homepage Banners</h3>
+                      <div style={{ display: "grid", gap: "12px" }}>
+                        {settings.banners.map((banner) => (
+                          <div
+                            key={banner.id}
+                            style={{
+                              border: `1px solid ${tone.line}`,
+                              borderRadius: "18px",
+                              padding: "16px"
+                            }}
+                          >
+                            <h4 style={{ margin: "0 0 6px" }}>{banner.title}</h4>
+                            <p style={{ margin: "0 0 6px", color: tone.muted }}>{banner.subtitle}</p>
+                            <p style={{ margin: 0, color: tone.muted }}>{banner.description}</p>
+                            <div style={{ display: "flex", gap: "10px", marginTop: "14px" }}>
+                              <button onClick={() => editBanner(banner)} style={secondaryButtonStyle}>
+                                Edit
+                              </button>
+                              <button onClick={() => removeBanner(banner.id)} style={secondaryButtonStyle}>
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 style={{ marginTop: 0 }}>Offers</h3>
+                      <div style={{ display: "grid", gap: "12px" }}>
+                        {settings.offers.map((offer) => (
+                          <div
+                            key={offer.id}
+                            style={{
+                              border: `1px solid ${tone.line}`,
+                              borderRadius: "18px",
+                              padding: "16px"
+                            }}
+                          >
+                            <p style={{ margin: 0 }}>{offer.text}</p>
+                            <div style={{ display: "flex", gap: "10px", marginTop: "14px" }}>
+                              <button onClick={() => editOffer(offer)} style={secondaryButtonStyle}>
+                                Edit
+                              </button>
+                              <button onClick={() => removeOffer(offer.id)} style={secondaryButtonStyle}>
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {adminTab === "settings" && (
+              <>
+                <h2 style={{ marginTop: 0 }}>Settings</h2>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                    gap: "20px"
+                  }}
+                >
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    <input
+                      value={settings.websiteName}
+                      onChange={(event) => updateSettingField("websiteName", event.target.value)}
+                      placeholder=""
+                      style={inputStyle}
+                    />
+                    <label style={{ display: "grid", gap: "8px", color: tone.muted }}>
+                      Change website logo
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) =>
+                          handleImageUpload(event, (dataUrl) =>
+                            updateSettingField("logoData", dataUrl)
+                          )
+                        }
+                      />
+                    </label>
+                    {settings.logoData && (
+                      <button onClick={() => updateSettingField("logoData", "")} style={secondaryButtonStyle}>
+                        Remove Custom Logo
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    <h3 style={{ margin: 0 }}>Payment Methods</h3>
+                    {paymentCatalog.map((option) => (
+                      <label
+                        key={option.value}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: "12px",
+                          border: `1px solid ${tone.line}`,
+                          borderRadius: "14px",
+                          padding: "12px 14px"
+                        }}
+                      >
+                        <span>{option.title}</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(settings.paymentMethods[option.value])}
+                          onChange={() => togglePaymentMethod(option.value)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    <h3 style={{ margin: 0 }}>UPI QR Code</h3>
+                    <label style={{ display: "grid", gap: "8px", color: tone.muted }}>
+                      Add or replace UPI QR
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) =>
+                          handleImageUpload(event, (dataUrl) =>
+                            updateSettingField("upiQrData", dataUrl)
+                          )
+                        }
+                      />
+                    </label>
+                    {settings.upiQrData ? (
+                      <>
+                        <img
+                          src={settings.upiQrData}
+                          alt="Configured UPI QR"
+                          style={{
+                            width: "220px",
+                            borderRadius: "16px",
+                            border: `1px solid ${tone.line}`,
+                            filter: "none"
+                          }}
+                        />
+                        <button onClick={() => updateSettingField("upiQrData", "")} style={secondaryButtonStyle}>
+                          Remove UPI QR
+                        </button>
+                      </>
+                    ) : (
+                      <p style={{ margin: 0, color: tone.muted }}>
+                        No QR uploaded yet.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      </div>
+    );
+  };
+
+  const renderCurrentPage = () => {
+    if (activePage === "product") {
+      return renderProductPage();
+    }
+
+    if (activePage === "wishlist") {
+      return renderWishlist();
+    }
+
+    if (activePage === "cart") {
+      return renderCart();
+    }
+
+    if (activePage === "checkout") {
+      return renderCheckout();
+    }
+
+    if (activePage === "payment") {
+      return renderPayment();
+    }
+
+    if (activePage === "orders") {
+      return renderOrders();
+    }
+
+    if (activePage === "wallet") {
+      return renderWallet();
+    }
+
+    if (activePage === "profile") {
+      return renderProfile();
+    }
+
+    if (activePage === "admin") {
+      return renderAdmin();
+    }
+
+    return renderHome();
+  };
+
+  const rightIconButton = {
+    border: "1px solid rgba(255,255,255,0.35)",
+    background: "transparent",
+    color: tone.white,
+    width: "42px",
+    height: "42px",
+    borderRadius: "999px",
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
+    position: "relative"
+  };
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: tone.soft,
+        color: tone.body,
+        fontFamily: "'Tiro Devanagari Sanskrit', serif"
+      }}
+    >
+      <nav
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 100,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "18px",
+          padding: "14px 18px",
+          background: tone.black,
+          color: tone.white,
+          borderBottom: `1px solid ${tone.darkLine}`
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "18px", flexWrap: "wrap" }}>
+          <button
+            onClick={() => setMenuOpen((prev) => !prev)}
+            style={{
+              ...rightIconButton,
+              width: "46px",
+              height: "46px"
+            }}
+            aria-label="Menu"
+          >
+            <MenuIcon />
+          </button>
+
+          <div style={{ position: "relative" }} ref={tshirtRef}>
+            <button
+              onClick={() => {
+                setShowTshirtMenu((prev) => !prev);
+                setShowShirtMenu(false);
+              }}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: tone.white,
+                cursor: "pointer",
+                fontSize: "18px",
+                fontWeight: 700
+              }}
+            >
+              T-Shirts
+            </button>
+
+            {showTshirtMenu && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "48px",
+                  left: 0,
+                  minWidth: "220px",
+                  background: tone.white,
+                  color: tone.body,
+                  borderRadius: "18px",
+                  border: `1px solid ${tone.line}`,
+                  padding: "10px",
+                  zIndex: 1000
+                }}
+              >
+                {tshirtCategories.map((category) => (
+                  <button
+                    key={category.value}
+                    onClick={() => openDepartment("tshirts", category.value)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "10px 12px",
+                      borderRadius: "12px",
+                      border: "none",
+                      background:
+                        selectedDepartment === "tshirts" && selectedCategory === category.value
+                          ? tone.black
+                          : "transparent",
+                      color:
+                        selectedDepartment === "tshirts" && selectedCategory === category.value
+                          ? tone.white
+                          : tone.body,
+                      cursor: "pointer"
+                    }}
+                  >
+                    {category.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ position: "relative" }} ref={shirtRef}>
+            <button
+              onClick={() => {
+                setShowShirtMenu((prev) => !prev);
+                setShowTshirtMenu(false);
+              }}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: tone.white,
+                cursor: "pointer",
+                fontSize: "18px",
+                fontWeight: 700
+              }}
+            >
+              Shirts
+            </button>
+
+            {showShirtMenu && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "48px",
+                  left: 0,
+                  minWidth: "220px",
+                  background: tone.white,
+                  color: tone.body,
+                  borderRadius: "18px",
+                  border: `1px solid ${tone.line}`,
+                  padding: "10px",
+                  zIndex: 1000
+                }}
+              >
+                {shirtCategories.map((category) => (
+                  <button
+                    key={category.value}
+                    onClick={() => openDepartment("shirts", category.value)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "10px 12px",
+                      borderRadius: "12px",
+                      border: "none",
+                      background:
+                        selectedDepartment === "shirts" && selectedCategory === category.value
+                          ? tone.black
+                          : "transparent",
+                      color:
+                        selectedDepartment === "shirts" && selectedCategory === category.value
+                          ? tone.white
+                          : tone.body,
+                      cursor: "pointer"
+                    }}
+                  >
+                    {category.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div
+          onClick={goHome}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            cursor: "pointer"
+          }}
+        >
+          {settings.logoData ? (
+            <img
+              src={settings.logoData}
+              alt={settings.websiteName}
+              style={{
+                height: "64px",
+                width: "64px",
+                objectFit: "cover",
+                borderRadius: "18px",
+                filter: "none"
+              }}
+            />
+          ) : (
+            <video
+              src={logoVideo}
+              autoPlay
+              loop
+              muted
+              playsInline
+              style={{
+                height: "120px",
+                width: "120px",
+                objectFit: "cover",
+                borderRadius: "18px",
+                filter: "none"
+              }}
+            />
+          )}
+          <div>
+            <p style={{ margin: 0, fontSize: "12px", letterSpacing: "2px" }}></p>
+            <h2 style={{ margin: "4px 0 0", fontSize: "22px" }}>{settings.websiteName}</h2>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              border: "1px solid rgba(255,255,255,0.35)",
+              borderRadius: "999px",
+              padding: "0 14px",
+              height: "42px"
+            }}
+          >
+            <SearchIcon />
+            <input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search products"
+              style={{
+                border: "none",
+                outline: "none",
+                background: "transparent",
+                color: tone.white,
+                width: "170px"
+              }}
+            />
+          </div>
+
+          <button onClick={() => navigateTo("wallet")} style={rightIconButton} aria-label="Wallet">
+            <WalletIcon />
+          </button>
+
+          <button onClick={() => navigateTo("wishlist")} style={rightIconButton} aria-label="Wishlist">
+            <HeartIcon />
+            {wishlist.length > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: "-5px",
+                  right: "-2px",
+                  minWidth: "18px",
+                  height: "18px",
+                  borderRadius: "999px",
+                  background: tone.white,
+                  color: tone.black,
+                  fontSize: "11px",
+                  display: "grid",
+                  placeItems: "center",
+                  padding: "0 4px"
+                }}
+              >
+                {wishlist.length}
+              </span>
+            )}
+          </button>
+
+          <button onClick={() => navigateTo("cart")} style={rightIconButton} aria-label="Cart">
+            <CartIcon />
+            {cartCount > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: "-5px",
+                  right: "-2px",
+                  minWidth: "18px",
+                  height: "18px",
+                  borderRadius: "999px",
+                  background: tone.white,
+                  color: tone.black,
+                  fontSize: "11px",
+                  display: "grid",
+                  placeItems: "center",
+                  padding: "0 4px"
+                }}
+              >
+                {cartCount}
+              </span>
+            )}
+          </button>
+
+          <button onClick={() => navigateTo("profile")} style={rightIconButton} aria-label="Profile">
+            <UserIcon />
+          </button>
+        </div>
+      </nav>
+
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            top: "94px",
+            right: "18px",
+            background: tone.black,
+            color: tone.white,
+            padding: "12px 16px",
+            borderRadius: "14px",
+            zIndex: 200,
+            border: `1px solid ${tone.darkLine}`
+          }}
+        >
+          {toast}
+        </div>
+      )}
+
+      {menuOpen && (
+        <>
+          <div
+            onClick={() => setMenuOpen(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.45)",
+              zIndex: 50
+            }}
+          />
+          <div
+            ref={drawerRef}
+            style={{
+              position: "fixed",
+              left: 0,
+              top: 0,
+              width: "300px",
+              height: "100vh",
+              background: tone.black,
+              color: tone.white,
+              padding: "24px",
+              boxSizing: "border-box",
+              zIndex: 60,
+              borderRight: `1px solid ${tone.darkLine}`
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between"
+              }}
+            >
+              <h3 style={{ margin: 0 }}>Menu</h3>
+              <button
+                onClick={() => setMenuOpen(false)}
+                style={{ ...rightIconButton, width: "40px", height: "40px" }}
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div style={{ marginTop: "24px" }}>
+              {user ? (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    {user.photo ? (
+                      <img
+                        src={user.photo}
+                        alt={user.name}
+                        style={{
+                          width: "56px",
+                          height: "56px",
+                          borderRadius: "50%",
+                          objectFit: "cover",
+                          filter: "none"
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: "56px",
+                          height: "56px",
+                          borderRadius: "50%",
+                          border: `1px solid ${tone.darkLine}`,
+                          display: "grid",
+                          placeItems: "center"
+                        }}
+                      >
+                        <UserIcon />
+                      </div>
+                    )}
+                    <div>
+                      <h3 style={{ margin: "0 0 4px" }}>{user.name}</h3>
+                      <p style={{ margin: 0, color: "#bdbdbd", fontSize: "13px" }}>{user.email}</p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 style={{ marginBottom: "6px" }}>Guest User</h3>
+                  <p style={{ marginTop: 0, color: "#bdbdbd" }}>
+                    Login for checkout, wallet and admin access.
+                  </p>
+                </>
+              )}
+            </div>
+
+            {!user && (
+              <button onClick={loginWithGoogle} style={{ ...primaryButtonStyle, width: "100%", marginTop: "18px" }}>
+                Continue with Google
+              </button>
+            )}
+
+            <div style={{ display: "grid", gap: "10px", marginTop: "26px" }}>
+              {[
+                { label: "Home", action: goHome },
+                { label: "Profile", action: () => navigateTo("profile") },
+                { label: "My Orders", action: () => navigateTo("orders") },
+                { label: "Wishlist", action: () => navigateTo("wishlist") },
+                { label: "Wallet", action: () => navigateTo("wallet") },
+                ...(isAdmin
+                  ? [{ label: "Admin Panel", action: () => navigateTo("admin") }]
+                  : [])
+              ].map((item) => (
+                <button
+                  key={item.label}
+                  onClick={item.action}
+                  style={{
+                    background: "transparent",
+                    color: tone.white,
+                    border: `1px solid ${tone.darkLine}`,
+                    borderRadius: "14px",
+                    padding: "12px 14px",
+                    textAlign: "left",
+                    cursor: "pointer"
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+
+              {user && (
+                <button
+                  onClick={logout}
+                  style={{
+                    background: tone.white,
+                    color: tone.black,
+                    border: "none",
+                    borderRadius: "14px",
+                    padding: "12px 14px",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontWeight: 700
+                  }}
+                >
+                  Logout
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {renderCurrentPage()}
+    </div>
+  );
+}

@@ -1,0 +1,2001 @@
+import React, { useEffect, useRef, useState } from "react";
+import "./App.css";
+import { auth } from "./firebase";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import logoVideo from "./logo.mp4";
+import logo from "./logo.png";
+
+const products = [
+  {
+    id: 1,
+    name: "Krishna Oversized Tee",
+    category: "krishna",
+    price: 499,
+    badge: "Best Seller",
+    rating: 4.9,
+    description:
+      "Bhakti-inspired streetwear tee with soft cotton feel and bold front artwork.",
+    colors: ["Black", "White", "Saffron", "Royal Blue"],
+    sizes: ["S", "M", "L", "XL", "XXL"],
+    fits: ["Regular", "Oversized"],
+    necks: ["Round Neck", "Mandarin"],
+    sleeves: ["Half Sleeve", "Full Sleeve"],
+    fabrics: ["180 GSM Cotton", "240 GSM Cotton"],
+    printStyles: ["Front Print", "Front + Back Print"]
+  },
+  {
+    id: 2,
+    name: "Mahadev Acid Wash Tee",
+    category: "mahadev",
+    price: 549,
+    badge: "Hot Drop",
+    rating: 4.8,
+    description:
+      "Dark aesthetic Mahadev tee built for a premium oversized fall and all-day comfort.",
+    colors: ["Black", "Ash Grey", "Navy"],
+    sizes: ["S", "M", "L", "XL", "XXL"],
+    fits: ["Regular", "Oversized"],
+    necks: ["Round Neck", "Polo Collar"],
+    sleeves: ["Half Sleeve", "Full Sleeve"],
+    fabrics: ["240 GSM Cotton", "French Terry"],
+    printStyles: ["Front Print", "Sleeve Detail", "Front + Back Print"]
+  },
+  {
+    id: 3,
+    name: "Hanuman Power Tee",
+    category: "hanuman",
+    price: 529,
+    badge: "New",
+    rating: 4.7,
+    description:
+      "Athleisure-inspired Hanuman design with sharp print placement and breathable fabric.",
+    colors: ["Red", "Black", "White"],
+    sizes: ["S", "M", "L", "XL", "XXL"],
+    fits: ["Regular", "Slim", "Oversized"],
+    necks: ["Round Neck", "V Neck"],
+    sleeves: ["Half Sleeve", "Raglan"],
+    fabrics: ["180 GSM Cotton", "Dry Fit Blend"],
+    printStyles: ["Front Print", "Back Print"]
+  },
+  {
+    id: 4,
+    name: "Narsimha Warrior Tee",
+    category: "narsimha",
+    price: 599,
+    badge: "Limited",
+    rating: 4.8,
+    description:
+      "Heavyweight warrior-inspired T-shirt designed for a standout premium look.",
+    colors: ["Black", "Olive", "Sand"],
+    sizes: ["M", "L", "XL", "XXL"],
+    fits: ["Regular", "Oversized"],
+    necks: ["Round Neck", "Polo Collar"],
+    sleeves: ["Half Sleeve", "Full Sleeve"],
+    fabrics: ["240 GSM Cotton", "Premium Terry"],
+    printStyles: ["Front Print", "Front + Back Print", "Sleeve Detail"]
+  },
+  {
+    id: 5,
+    name: "Yodha Combat Tee",
+    category: "yodha",
+    price: 649,
+    badge: "Trending",
+    rating: 4.6,
+    description:
+      "Modern combat graphic tee with rugged styling and comfortable everyday wear.",
+    colors: ["Army Green", "Black", "Charcoal"],
+    sizes: ["S", "M", "L", "XL", "XXL"],
+    fits: ["Regular", "Slim", "Oversized"],
+    necks: ["Round Neck", "Henley"],
+    sleeves: ["Half Sleeve", "Full Sleeve"],
+    fabrics: ["200 GSM Cotton", "French Terry"],
+    printStyles: ["Front Print", "Back Print", "Front + Back Print"]
+  },
+  {
+    id: 6,
+    name: "Astra Premium Tee",
+    category: "astra",
+    price: 699,
+    badge: "Premium",
+    rating: 4.9,
+    description:
+      "Premium celestial theme tee with extra customization options and richer fabric feel.",
+    colors: ["Midnight Blue", "White", "Black", "Wine"],
+    sizes: ["S", "M", "L", "XL", "XXL"],
+    fits: ["Regular", "Oversized"],
+    necks: ["Round Neck", "Polo Collar", "Mandarin"],
+    sleeves: ["Half Sleeve", "Full Sleeve", "Drop Shoulder"],
+    fabrics: ["240 GSM Cotton", "Premium Terry", "Bio Wash Cotton"],
+    printStyles: ["Front Print", "Front + Back Print", "Embroidery Mix"]
+  }
+];
+
+const tshirtCategories = [
+  { value: "all", label: "All T-Shirts" },
+  { value: "krishna", label: "Krishna" },
+  { value: "mahadev", label: "Mahadev" },
+  { value: "hanuman", label: "Hanuman" },
+  { value: "narsimha", label: "Narsimha" },
+  { value: "yodha", label: "Yodha" },
+  { value: "astra", label: "Astra" }
+];
+
+const shirtCollections = ["Embroidery Shirts", "Plain Shirts", "Party Wear Shirts"];
+
+const sortOptions = [
+  { value: "featured", label: "Featured" },
+  { value: "priceLow", label: "Price: Low to High" },
+  { value: "priceHigh", label: "Price: High to Low" },
+  { value: "rating", label: "Top Rated" }
+];
+
+const paymentOptions = [
+  {
+    value: "upi",
+    title: "UPI",
+    description: "Google Pay, PhonePe, Paytm, BHIM"
+  },
+  {
+    value: "cod",
+    title: "Cash on Delivery",
+    description: "Pay at the time of delivery"
+  },
+  {
+    value: "card",
+    title: "Card",
+    description: "Credit card, debit card, net banking"
+  },
+  {
+    value: "aura",
+    title: "Aura Points",
+    description: "Use wallet balance for future drops"
+  }
+];
+
+const initialCheckoutForm = {
+  name: "",
+  phone: "",
+  address: "",
+  city: "",
+  pincode: "",
+  landmark: ""
+};
+
+const formatCurrency = (amount) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0
+  }).format(amount);
+
+const createDefaultConfig = (product) => ({
+  color: product.colors[0],
+  size: product.sizes[0],
+  fit: product.fits[0],
+  neck: product.necks[0],
+  sleeve: product.sleeves[0],
+  fabric: product.fabrics[0],
+  printStyle: product.printStyles[0],
+  quantity: 1
+});
+
+const menuStyle = {
+  padding: "10px 0",
+  borderBottom: "1px solid rgba(255,255,255,0.12)",
+  cursor: "pointer"
+};
+
+const dropdownStyle = {
+  position: "absolute",
+  top: "42px",
+  left: 0,
+  background: "#ffffff",
+  color: "#111827",
+  borderRadius: "14px",
+  boxShadow: "0 20px 40px rgba(15,23,42,0.15)",
+  padding: "8px",
+  minWidth: "180px",
+  zIndex: 1000
+};
+
+const dropItemStyle = {
+  padding: "10px 12px",
+  cursor: "pointer",
+  borderRadius: "10px",
+  fontSize: "14px"
+};
+
+const pageShellStyle = {
+  maxWidth: "1180px",
+  margin: "0 auto",
+  padding: "28px 20px 48px"
+};
+
+const sectionCardStyle = {
+  background: "#ffffff",
+  borderRadius: "24px",
+  padding: "24px",
+  boxShadow: "0 24px 60px rgba(15,23,42,0.08)"
+};
+
+const primaryButtonStyle = {
+  padding: "12px 18px",
+  borderRadius: "12px",
+  border: "none",
+  background: "#111111",
+  color: "#ffffff",
+  cursor: "pointer",
+  fontWeight: 700
+};
+
+const secondaryButtonStyle = {
+  padding: "12px 18px",
+  borderRadius: "12px",
+  border: "1px solid #d1d5db",
+  background: "#ffffff",
+  color: "#111111",
+  cursor: "pointer",
+  fontWeight: 700
+};
+
+const inputStyle = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: "12px",
+  border: "1px solid #d1d5db",
+  outline: "none",
+  fontSize: "15px",
+  boxSizing: "border-box"
+};
+
+const selectStyle = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: "12px",
+  border: "1px solid #d1d5db",
+  outline: "none",
+  fontSize: "15px",
+  background: "#ffffff"
+};
+
+const getOptionButtonStyle = (isActive) => ({
+  padding: "10px 14px",
+  borderRadius: "999px",
+  border: isActive ? "1px solid #111111" : "1px solid #d1d5db",
+  background: isActive ? "#111111" : "#ffffff",
+  color: isActive ? "#ffffff" : "#111111",
+  cursor: "pointer",
+  fontWeight: 600
+});
+
+const getCategoryTabStyle = (isActive) => ({
+  padding: "10px 16px",
+  borderRadius: "999px",
+  border: isActive ? "none" : "1px solid #d1d5db",
+  background: isActive ? "#111111" : "#ffffff",
+  color: isActive ? "#ffffff" : "#111111",
+  cursor: "pointer",
+  fontWeight: 700
+});
+
+const getPaymentCardStyle = (isActive) => ({
+  border: isActive ? "2px solid #111111" : "1px solid #d1d5db",
+  borderRadius: "18px",
+  padding: "18px",
+  cursor: "pointer",
+  background: isActive ? "#f8fafc" : "#ffffff"
+});
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [activePage, setActivePage] = useState("home");
+  const [history, setHistory] = useState([]);
+  const [showTshirtMenu, setShowTshirtMenu] = useState(false);
+  const [showShirtMenu, setShowShirtMenu] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("featured");
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [productConfig, setProductConfig] = useState(null);
+  const [cart, setCart] = useState([]);
+  const [wishlist, setWishlist] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [showAdded, setShowAdded] = useState(false);
+  const [addedMessage, setAddedMessage] = useState("");
+  const [checkoutForm, setCheckoutForm] = useState(initialCheckoutForm);
+  const [paymentMethod, setPaymentMethod] = useState("upi");
+
+  const tshirtRef = useRef(null);
+  const shirtRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const cartCount = cart.reduce((count, item) => count + item.quantity, 0);
+  const cartTotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
+  const auraPoints = 120;
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (tshirtRef.current && !tshirtRef.current.contains(event.target)) {
+        setShowTshirtMenu(false);
+      }
+
+      if (shirtRef.current && !shirtRef.current.contains(event.target)) {
+        setShowShirtMenu(false);
+      }
+
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showAdded) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowAdded(false);
+    }, 1800);
+
+    return () => window.clearTimeout(timer);
+  }, [showAdded]);
+
+  const loginWithGoogle = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+
+      setUser({
+        name: result.user.displayName,
+        email: result.user.email,
+        photo: result.user.photoURL
+      });
+      setMenuOpen(false);
+    } catch (error) {
+      console.log(error);
+      alert("Login failed. Please try again.");
+    }
+  };
+
+  const logout = () => {
+    setUser(null);
+    setMenuOpen(false);
+    setHistory([]);
+    setActivePage("home");
+  };
+
+  const navigateTo = (page) => {
+    if (page === activePage) {
+      setMenuOpen(false);
+      return;
+    }
+
+    setHistory((prev) => [...prev, activePage]);
+    setActivePage(page);
+    setMenuOpen(false);
+    setShowTshirtMenu(false);
+    setShowShirtMenu(false);
+  };
+
+  const goHome = () => {
+    setHistory([]);
+    setActivePage("home");
+    setMenuOpen(false);
+    setShowTshirtMenu(false);
+    setShowShirtMenu(false);
+  };
+
+  const goBack = () => {
+    const previousPage = history[history.length - 1] || "home";
+    setHistory((prev) => prev.slice(0, -1));
+    setActivePage(previousPage);
+    setMenuOpen(false);
+    setShowTshirtMenu(false);
+    setShowShirtMenu(false);
+  };
+
+  const selectCategory = (category) => {
+    setSelectedCategory(category);
+    setShowTshirtMenu(false);
+
+    if (activePage !== "home") {
+      navigateTo("home");
+    }
+  };
+
+  const openShirtCollection = (collectionName) => {
+    setShowShirtMenu(false);
+    setAddedMessage(`${collectionName} section will be added next.`);
+    setShowAdded(true);
+  };
+
+  const openProduct = (product) => {
+    setSelectedProduct(product);
+    setProductConfig(createDefaultConfig(product));
+    navigateTo("productDetails");
+  };
+
+  const updateProductConfig = (field, value) => {
+    setProductConfig((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const addConfiguredProductToCart = (product = selectedProduct, config = productConfig) => {
+    if (!product || !config) {
+      return;
+    }
+
+    const quantity = Math.max(1, Number(config.quantity) || 1);
+    const cartItem = {
+      cartId: `${product.id}-${Date.now()}`,
+      productId: product.id,
+      name: product.name,
+      category: product.category,
+      price: product.price,
+      color: config.color,
+      size: config.size,
+      fit: config.fit,
+      neck: config.neck,
+      sleeve: config.sleeve,
+      fabric: config.fabric,
+      printStyle: config.printStyle,
+      quantity
+    };
+
+    setCart((prev) => [...prev, cartItem]);
+    setAddedMessage(`${product.name} added to cart.`);
+    setShowAdded(true);
+  };
+
+  const addAndGoToCart = () => {
+    addConfiguredProductToCart();
+    navigateTo("cart");
+  };
+
+  const toggleWishlist = (product) => {
+    setWishlist((prev) => {
+      const exists = prev.some((item) => item.id === product.id);
+      return exists ? prev.filter((item) => item.id !== product.id) : [product, ...prev];
+    });
+  };
+
+  const updateCartQuantity = (cartId, change) => {
+    setCart((prev) =>
+      prev.map((item) =>
+        item.cartId === cartId
+          ? {
+              ...item,
+              quantity: Math.max(1, item.quantity + change)
+            }
+          : item
+      )
+    );
+  };
+
+  const removeFromCart = (cartId) => {
+    setCart((prev) => prev.filter((item) => item.cartId !== cartId));
+  };
+
+  const handleCheckoutChange = (event) => {
+    const { name, value } = event.target;
+    setCheckoutForm((prev) => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const proceedToPayment = () => {
+    const requiredFields = ["name", "phone", "address", "city", "pincode"];
+    const hasMissingField = requiredFields.some(
+      (field) => !checkoutForm[field].trim()
+    );
+
+    if (hasMissingField) {
+      alert("Please fill your name, phone, address, city and pincode.");
+      return;
+    }
+
+    navigateTo("paymentMethod");
+  };
+
+  const placeOrder = () => {
+    if (cart.length === 0) {
+      alert("Your cart is empty.");
+      return;
+    }
+
+    const orderId = `VA-${Date.now().toString().slice(-6)}`;
+    const order = {
+      id: orderId,
+      date: new Date().toLocaleString("en-IN"),
+      paymentMethod,
+      status: paymentMethod === "cod" ? "Order Confirmed" : "Payment Received",
+      items: cart,
+      total: cartTotal,
+      customer: checkoutForm
+    };
+
+    setOrders((prev) => [order, ...prev]);
+    setCart([]);
+    setCheckoutForm(initialCheckoutForm);
+    setPaymentMethod("upi");
+    setHistory(["home"]);
+    setActivePage("orders");
+    setAddedMessage(`Order ${orderId} placed successfully.`);
+    setShowAdded(true);
+  };
+
+  const filteredProducts = products
+    .filter((product) => {
+      const matchesCategory =
+        selectedCategory === "all" || product.category === selectedCategory;
+      const searchableText = `${product.name} ${product.category} ${product.description}`.toLowerCase();
+      const matchesSearch = searchableText.includes(searchTerm.toLowerCase());
+      return matchesCategory && matchesSearch;
+    })
+    .sort((left, right) => {
+      if (sortBy === "priceLow") {
+        return left.price - right.price;
+      }
+
+      if (sortBy === "priceHigh") {
+        return right.price - left.price;
+      }
+
+      if (sortBy === "rating") {
+        return right.rating - left.rating;
+      }
+
+      return 0;
+    });
+
+  const BackButton = ({ label = "Back" }) => (
+    <button
+      onClick={goBack}
+      style={{
+        ...secondaryButtonStyle,
+        marginBottom: "20px"
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  const renderOptionGroup = (label, field, options) => (
+    <div style={{ marginBottom: "18px" }}>
+      <p style={{ margin: "0 0 10px", fontSize: "14px", fontWeight: 700 }}>
+        {label}
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+        {options.map((option) => (
+          <button
+            key={option}
+            onClick={() => updateProductConfig(field, option)}
+            style={getOptionButtonStyle(productConfig?.[field] === option)}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background:
+          "linear-gradient(180deg, #f8fafc 0%, #f5f0e8 42%, #ffffff 100%)",
+        color: "#111827",
+        fontFamily: "Arial, sans-serif"
+      }}
+    >
+      <nav
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 100,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "18px",
+          padding: "12px 18px",
+          background: "rgba(0, 0, 0, 0.92)",
+          color: "#ffffff",
+          backdropFilter: "blur(10px)"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "18px", flexWrap: "wrap" }}>
+          <button
+            onClick={() => setMenuOpen(true)}
+            style={{
+              background: "transparent",
+              color: "#ffffff",
+              border: "none",
+              fontSize: "28px",
+              cursor: "pointer"
+            }}
+          >
+            =
+          </button>
+
+          <div style={{ position: "relative" }} ref={tshirtRef}>
+            <h3
+              onClick={() => setShowTshirtMenu((prev) => !prev)}
+              style={{ cursor: "pointer", margin: 0 }}
+            >
+              T-Shirts
+            </h3>
+
+            {showTshirtMenu && (
+              <div style={dropdownStyle}>
+                {tshirtCategories.map((category) => (
+                  <p
+                    key={category.value}
+                    onClick={() => selectCategory(category.value)}
+                    style={{
+                      ...dropItemStyle,
+                      background:
+                        selectedCategory === category.value ? "#f3f4f6" : "transparent"
+                    }}
+                  >
+                    {category.label}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ position: "relative" }} ref={shirtRef}>
+            <h3
+              onClick={() => setShowShirtMenu((prev) => !prev)}
+              style={{ cursor: "pointer", margin: 0 }}
+            >
+              Shirts
+            </h3>
+
+            {showShirtMenu && (
+              <div style={dropdownStyle}>
+                {shirtCollections.map((collection) => (
+                  <p
+                    key={collection}
+                    onClick={() => openShirtCollection(collection)}
+                    style={dropItemStyle}
+                  >
+                    {collection}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div
+          onClick={goHome}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            cursor: "pointer"
+          }}
+        >
+          <video
+            src={logoVideo}
+            autoPlay
+            loop
+            muted
+            playsInline
+            style={{
+              height: "68px",
+              width: "68px",
+              objectFit: "cover",
+              borderRadius: "18px"
+            }}
+          />
+          <div>
+            <p style={{ margin: 0, fontSize: "13px", letterSpacing: "2px" }}>
+              
+            </p>
+            <h2 style={{ margin: "4px 0 0", fontSize: "22px" }}>
+              Premium T-Shirt Studio
+            </h2>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "18px", flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              border: "1px solid rgba(255,255,255,0.2)",
+              borderRadius: "999px",
+              padding: "6px 12px",
+              background: "rgba(255,255,255,0.08)"
+            }}
+          >
+            <input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search design or theme"
+              style={{
+                border: "none",
+                outline: "none",
+                background: "transparent",
+                color: "#ffffff",
+                width: "180px",
+                fontSize: "14px"
+              }}
+            />
+          </div>
+
+          <button
+            onClick={() => navigateTo("wallet")}
+            style={{ background: "transparent", border: "none", color: "#ffffff", cursor: "pointer" }}
+            aria-label="Wallet"
+          >
+            Wallet
+          </button>
+
+          <button
+            onClick={() => navigateTo("wishlist")}
+            style={{ background: "transparent", border: "none", color: "#ffffff", cursor: "pointer" }}
+            aria-label="Wishlist"
+          >
+            Wishlist {wishlist.length > 0 ? `(${wishlist.length})` : ""}
+          </button>
+
+          <button
+            onClick={() => navigateTo("cart")}
+            style={{
+              position: "relative",
+              background: "transparent",
+              border: "none",
+              color: "#ffffff",
+              cursor: "pointer",
+              fontWeight: 700
+            }}
+            aria-label="Cart"
+          >
+            Cart
+            {cartCount > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: "-10px",
+                  right: "-18px",
+                  minWidth: "20px",
+                  height: "20px",
+                  borderRadius: "999px",
+                  background: "#ef4444",
+                  color: "#ffffff",
+                  fontSize: "11px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "0 5px"
+                }}
+              >
+                {cartCount}
+              </span>
+            )}
+          </button>
+        </div>
+      </nav>
+
+      {showAdded && (
+        <div
+          style={{
+            position: "fixed",
+            top: "92px",
+            right: "20px",
+            background: "#111111",
+            color: "#ffffff",
+            padding: "12px 16px",
+            borderRadius: "14px",
+            zIndex: 9999,
+            boxShadow: "0 18px 40px rgba(15,23,42,0.24)"
+          }}
+        >
+          {addedMessage}
+        </div>
+      )}
+
+      {menuOpen && (
+        <>
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.3)",
+              zIndex: 50
+            }}
+          />
+          <div
+            ref={menuRef}
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "280px",
+              height: "100%",
+              background: "#050505",
+              color: "#ffffff",
+              padding: "24px",
+              zIndex: 60,
+              boxSizing: "border-box"
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between"
+              }}
+            >
+              <h3 style={{ margin: 0 }}>Menu</h3>
+              <button
+                onClick={() => setMenuOpen(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#ffffff",
+                  cursor: "pointer",
+                  fontSize: "18px"
+                }}
+              >
+                X
+              </button>
+            </div>
+
+            <div style={{ marginTop: "24px" }}>
+              {user ? (
+                <>
+                  <img
+                    src={user.photo}
+                    alt={user.name}
+                    style={{ width: "58px", height: "58px", borderRadius: "50%" }}
+                  />
+                  <h3 style={{ marginBottom: "4px" }}>{user.name}</h3>
+                  <p style={{ margin: 0, color: "#9ca3af" }}>{user.email}</p>
+                </>
+              ) : (
+                <>
+                  <h3 style={{ marginBottom: "6px" }}>Guest User</h3>
+                  <p style={{ marginTop: 0, color: "#9ca3af" }}>
+                    Login for a faster checkout experience.
+                  </p>
+                </>
+              )}
+            </div>
+
+            {!user && (
+              <button
+                onClick={loginWithGoogle}
+                style={{
+                  ...primaryButtonStyle,
+                  width: "100%",
+                  marginTop: "18px"
+                }}
+              >
+                Continue with Google
+              </button>
+            )}
+
+            <div style={{ marginTop: "26px" }}>
+              <p style={menuStyle} onClick={goHome}>
+                Home
+              </p>
+              <p style={menuStyle} onClick={() => navigateTo("orders")}>
+                My Orders
+              </p>
+              <p style={menuStyle} onClick={() => navigateTo("wishlist")}>
+                Wishlist
+              </p>
+              <p style={menuStyle} onClick={() => navigateTo("wallet")}>
+                Wallet
+              </p>
+              <p
+                style={menuStyle}
+                onClick={() => alert("Contact: vastraaura@gmail.com")}
+              >
+                Contact Us
+              </p>
+              <p style={menuStyle} onClick={() => navigateTo("terms")}>
+                T and C
+              </p>
+              {user && (
+                <p style={menuStyle} onClick={logout}>
+                  Logout
+                </p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {activePage === "home" && (
+        <div style={pageShellStyle}>
+          <section
+            style={{
+              ...sectionCardStyle,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: "24px",
+              background:
+                "linear-gradient(135deg, rgba(17,17,17,0.96), rgba(120,53,15,0.94))",
+              color: "#ffffff"
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  marginTop: 0,
+                  fontSize: "13px",
+                  letterSpacing: "3px",
+                  textTransform: "uppercase",
+                  color: "#fde68a"
+                }}
+              >
+                Design your drop
+              </p>
+              <h1 style={{ margin: "0 0 14px", fontSize: "44px", lineHeight: 1.1 }}>
+                Fix order flow and add all important T-shirt options in one place.
+              </h1>
+              <p
+                style={{
+                  margin: "0 0 22px",
+                  color: "rgba(255,255,255,0.82)",
+                  maxWidth: "560px",
+                  lineHeight: 1.7
+                }}
+              >
+                Size, color, fit, neck, sleeve, fabric, print style, quantity,
+                checkout details and order history are now connected like a real
+                T-shirt website.
+              </p>
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                <button
+                  onClick={() => {
+                    setSelectedCategory("all");
+                    setSearchTerm("");
+                  }}
+                  style={{
+                    ...primaryButtonStyle,
+                    background: "#ffffff",
+                    color: "#111111"
+                  }}
+                >
+                  Shop Collection
+                </button>
+                <button
+                  onClick={() => navigateTo("orders")}
+                  style={{
+                    ...secondaryButtonStyle,
+                    background: "transparent",
+                    color: "#ffffff",
+                    border: "1px solid rgba(255,255,255,0.28)"
+                  }}
+                >
+                  View Orders
+                </button>
+              </div>
+            </div>
+
+            <div
+              style={{
+                minHeight: "280px",
+                borderRadius: "24px",
+                background:
+                  "radial-gradient(circle at top, rgba(255,255,255,0.24), rgba(255,255,255,0.03))",
+                padding: "24px",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between"
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "18px" }}>
+                <div>
+                  <p style={{ margin: 0, color: "#fde68a", fontWeight: 700 }}>Live Features</p>
+                  <p style={{ margin: "8px 0 0", lineHeight: 1.7 }}>
+                    Product customization
+                    <br />
+                    Cart quantity update
+                    <br />
+                    Checkout and payment
+                    <br />
+                    Saved orders and wishlist
+                  </p>
+                </div>
+                <img
+                  src={logo}
+                  alt=""
+                  style={{
+                    width: "110px",
+                    height: "110px",
+                    borderRadius: "24px",
+                    objectFit: "cover",
+                    boxShadow: "0 20px 35px rgba(0,0,0,0.25)"
+                  }}
+                />
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(120px, 1fr))",
+                  gap: "12px"
+                }}
+              >
+                {[
+                  "Multiple sizes",
+                  "Premium fabric choices",
+                  "Fit and neck style",
+                  "Order summary"
+                ].map((item) => (
+                  <div
+                    key={item}
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.15)",
+                      borderRadius: "16px",
+                      padding: "14px",
+                      background: "rgba(255,255,255,0.06)"
+                    }}
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section style={{ marginTop: "28px", ...sectionCardStyle }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "16px"
+              }}
+            >
+              <div>
+                <h2 style={{ margin: "0 0 8px" }}>Browse the catalog</h2>
+                <p style={{ margin: 0, color: "#6b7280" }}>
+                  Choose a theme, sort the products, then open a product to
+                  customize it fully.
+                </p>
+              </div>
+
+              <div style={{ minWidth: "220px" }}>
+                <select
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value)}
+                  style={selectStyle}
+                >
+                  {sortOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "12px",
+                marginTop: "20px"
+              }}
+            >
+              {tshirtCategories.map((category) => (
+                <button
+                  key={category.value}
+                  onClick={() => setSelectedCategory(category.value)}
+                  style={getCategoryTabStyle(selectedCategory === category.value)}
+                >
+                  {category.label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section
+            style={{
+              marginTop: "28px",
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+              gap: "20px"
+            }}
+          >
+            {filteredProducts.map((product) => {
+              const inWishlist = wishlist.some((item) => item.id === product.id);
+
+              return (
+                <article key={product.id} style={sectionCardStyle}>
+                  <div
+                    style={{
+                      height: "220px",
+                      borderRadius: "20px",
+                      background:
+                        "linear-gradient(145deg, #111827 0%, #374151 45%, #92400e 100%)",
+                      color: "#ffffff",
+                      padding: "20px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between"
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+                      <span
+                        style={{
+                          alignSelf: "flex-start",
+                          background: "rgba(255,255,255,0.12)",
+                          padding: "6px 10px",
+                          borderRadius: "999px",
+                          fontSize: "12px"
+                        }}
+                      >
+                        {product.badge}
+                      </span>
+                      <button
+                        onClick={() => toggleWishlist(product)}
+                        style={{
+                          background: "rgba(255,255,255,0.12)",
+                          border: "none",
+                          color: "#ffffff",
+                          width: "38px",
+                          height: "38px",
+                          borderRadius: "50%",
+                          cursor: "pointer"
+                        }}
+                      >
+                        {inWishlist ? "Saved" : "Save"}
+                      </button>
+                    </div>
+                    <div>
+                      <p style={{ margin: 0, fontSize: "14px", color: "#fde68a" }}>
+                        Rating {product.rating}
+                      </p>
+                      <h3 style={{ margin: "8px 0 0", fontSize: "24px" }}>{product.name}</h3>
+                    </div>
+                  </div>
+
+                  <p style={{ margin: "16px 0 10px", color: "#4b5563", lineHeight: 1.7 }}>
+                    {product.description}
+                  </p>
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "14px" }}>
+                    {product.sizes.map((size) => (
+                      <span
+                        key={size}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: "999px",
+                          background: "#f3f4f6",
+                          fontSize: "12px"
+                        }}
+                      >
+                        {size}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      flexWrap: "wrap",
+                      gap: "12px"
+                    }}
+                  >
+                    <div>
+                      <p style={{ margin: 0, color: "#6b7280", fontSize: "14px" }}>
+                        Starting from
+                      </p>
+                      <h3 style={{ margin: "6px 0 0" }}>{formatCurrency(product.price)}</h3>
+                    </div>
+                    <button onClick={() => openProduct(product)} style={primaryButtonStyle}>
+                      Customize
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </section>
+
+          {filteredProducts.length === 0 && (
+            <div style={{ ...sectionCardStyle, marginTop: "28px", textAlign: "center" }}>
+              <h3 style={{ marginTop: 0 }}>No products found</h3>
+              <p style={{ marginBottom: 0, color: "#6b7280" }}>
+                Try a different search keyword or switch the category.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activePage === "productDetails" && (
+        <div style={pageShellStyle}>
+          <BackButton />
+
+          {selectedProduct && productConfig ? (
+            <section
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                gap: "24px"
+              }}
+            >
+              <div style={sectionCardStyle}>
+                <div
+                  style={{
+                    minHeight: "420px",
+                    borderRadius: "24px",
+                    background:
+                      "linear-gradient(145deg, #111827 0%, #4b5563 52%, #c2410c 100%)",
+                    padding: "24px",
+                    color: "#ffffff",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between"
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+                    <span
+                      style={{
+                        background: "rgba(255,255,255,0.14)",
+                        padding: "6px 12px",
+                        borderRadius: "999px",
+                        fontSize: "12px"
+                      }}
+                    >
+                      {selectedProduct.badge}
+                    </span>
+                    <span
+                      style={{
+                        background: "rgba(255,255,255,0.14)",
+                        padding: "6px 12px",
+                        borderRadius: "999px",
+                        fontSize: "12px"
+                      }}
+                    >
+                      Rating {selectedProduct.rating}
+                    </span>
+                  </div>
+
+                  <div style={{ textAlign: "center" }}>
+                    <img
+                      src={logo}
+                      alt={selectedProduct.name}
+                      style={{
+                        width: "180px",
+                        height: "180px",
+                        objectFit: "cover",
+                        borderRadius: "28px",
+                        boxShadow: "0 24px 40px rgba(0,0,0,0.25)"
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <h2 style={{ margin: "0 0 10px" }}>{selectedProduct.name}</h2>
+                    <p style={{ margin: "0 0 10px", color: "rgba(255,255,255,0.82)" }}>
+                      {selectedProduct.description}
+                    </p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                      <span
+                        style={{
+                          padding: "8px 12px",
+                          borderRadius: "999px",
+                          background: "rgba(255,255,255,0.12)"
+                        }}
+                      >
+                        Color: {productConfig.color}
+                      </span>
+                      <span
+                        style={{
+                          padding: "8px 12px",
+                          borderRadius: "999px",
+                          background: "rgba(255,255,255,0.12)"
+                        }}
+                      >
+                        Size: {productConfig.size}
+                      </span>
+                      <span
+                        style={{
+                          padding: "8px 12px",
+                          borderRadius: "999px",
+                          background: "rgba(255,255,255,0.12)"
+                        }}
+                      >
+                        Fit: {productConfig.fit}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={sectionCardStyle}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "13px",
+                    letterSpacing: "3px",
+                    textTransform: "uppercase",
+                    color: "#92400e"
+                  }}
+                >
+                  T-shirt options
+                </p>
+                <h1 style={{ margin: "10px 0 8px", fontSize: "36px", lineHeight: 1.1 }}>
+                  {selectedProduct.name}
+                </h1>
+                <p style={{ margin: "0 0 18px", color: "#4b5563", lineHeight: 1.7 }}>
+                  Add the same options that users expect on a T-shirt website
+                  before they place the order.
+                </p>
+                <h2 style={{ marginTop: 0 }}>{formatCurrency(selectedProduct.price)}</h2>
+
+                {renderOptionGroup("Choose color", "color", selectedProduct.colors)}
+                {renderOptionGroup("Choose size", "size", selectedProduct.sizes)}
+                {renderOptionGroup("Choose fit", "fit", selectedProduct.fits)}
+                {renderOptionGroup("Neck style", "neck", selectedProduct.necks)}
+                {renderOptionGroup("Sleeve style", "sleeve", selectedProduct.sleeves)}
+                {renderOptionGroup("Fabric", "fabric", selectedProduct.fabrics)}
+                {renderOptionGroup("Print style", "printStyle", selectedProduct.printStyles)}
+
+                <div style={{ marginBottom: "22px" }}>
+                  <p style={{ margin: "0 0 10px", fontSize: "14px", fontWeight: 700 }}>
+                    Quantity
+                  </p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <button
+                      onClick={() =>
+                        updateProductConfig(
+                          "quantity",
+                          Math.max(1, productConfig.quantity - 1)
+                        )
+                      }
+                      style={secondaryButtonStyle}
+                    >
+                      -
+                    </button>
+                    <div
+                      style={{
+                        minWidth: "72px",
+                        textAlign: "center",
+                        padding: "12px 16px",
+                        borderRadius: "12px",
+                        background: "#f3f4f6",
+                        fontWeight: 700
+                      }}
+                    >
+                      {productConfig.quantity}
+                    </div>
+                    <button
+                      onClick={() =>
+                        updateProductConfig("quantity", productConfig.quantity + 1)
+                      }
+                      style={secondaryButtonStyle}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "18px",
+                    padding: "18px",
+                    background: "#f8fafc",
+                    marginBottom: "20px"
+                  }}
+                >
+                  <h3 style={{ marginTop: 0 }}>Selection summary</h3>
+                  <p style={{ margin: "8px 0", color: "#4b5563" }}>
+                    Color: {productConfig.color}
+                  </p>
+                  <p style={{ margin: "8px 0", color: "#4b5563" }}>
+                    Size: {productConfig.size}
+                  </p>
+                  <p style={{ margin: "8px 0", color: "#4b5563" }}>
+                    Fit: {productConfig.fit}
+                  </p>
+                  <p style={{ margin: "8px 0", color: "#4b5563" }}>
+                    Neck: {productConfig.neck}
+                  </p>
+                  <p style={{ margin: "8px 0", color: "#4b5563" }}>
+                    Sleeve: {productConfig.sleeve}
+                  </p>
+                  <p style={{ margin: "8px 0", color: "#4b5563" }}>
+                    Fabric: {productConfig.fabric}
+                  </p>
+                  <p style={{ margin: "8px 0", color: "#4b5563" }}>
+                    Print: {productConfig.printStyle}
+                  </p>
+                  <p style={{ margin: "8px 0", color: "#4b5563" }}>
+                    Quantity: {productConfig.quantity}
+                  </p>
+                  <h3 style={{ marginBottom: 0 }}>
+                    Total: {formatCurrency(selectedProduct.price * productConfig.quantity)}
+                  </h3>
+                </div>
+
+                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                  <button onClick={addConfiguredProductToCart} style={primaryButtonStyle}>
+                    Add to Cart
+                  </button>
+                  <button onClick={addAndGoToCart} style={secondaryButtonStyle}>
+                    Add and View Cart
+                  </button>
+                </div>
+              </div>
+            </section>
+          ) : (
+            <div style={sectionCardStyle}>
+              <h2 style={{ marginTop: 0 }}>Product not found</h2>
+              <p style={{ color: "#6b7280" }}>
+                Go back to the homepage and select a product again.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activePage === "wishlist" && (
+        <div style={pageShellStyle}>
+          <BackButton />
+          <div style={sectionCardStyle}>
+            <h2 style={{ marginTop: 0 }}>Wishlist</h2>
+            {wishlist.length === 0 ? (
+              <p style={{ marginBottom: 0, color: "#6b7280" }}>
+                No saved products yet. Tap Save on any design you like.
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                  gap: "18px"
+                }}
+              >
+                {wishlist.map((product) => (
+                  <div
+                    key={product.id}
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "18px",
+                      padding: "18px"
+                    }}
+                  >
+                    <h3 style={{ marginTop: 0 }}>{product.name}</h3>
+                    <p style={{ color: "#6b7280", lineHeight: 1.7 }}>
+                      {product.description}
+                    </p>
+                    <p style={{ fontWeight: 700 }}>{formatCurrency(product.price)}</p>
+                    <button onClick={() => openProduct(product)} style={primaryButtonStyle}>
+                      Customize
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activePage === "cart" && (
+        <div style={pageShellStyle}>
+          <BackButton />
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+              gap: "24px"
+            }}
+          >
+            <section style={sectionCardStyle}>
+              <h2 style={{ marginTop: 0 }}>Cart</h2>
+              {cart.length === 0 ? (
+                <>
+                  <p style={{ color: "#6b7280" }}>
+                    Your cart is empty. Customize a T-shirt and add it here.
+                  </p>
+                  <button onClick={goHome} style={primaryButtonStyle}>
+                    Continue Shopping
+                  </button>
+                </>
+              ) : (
+                <div style={{ display: "grid", gap: "14px" }}>
+                  {cart.map((item) => (
+                    <div
+                      key={item.cartId}
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        borderRadius: "18px",
+                        padding: "18px"
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          justifyContent: "space-between",
+                          gap: "14px"
+                        }}
+                      >
+                        <div>
+                          <h3 style={{ margin: "0 0 8px" }}>{item.name}</h3>
+                          <p style={{ margin: "4px 0", color: "#4b5563" }}>
+                            {item.color} | {item.size} | {item.fit}
+                          </p>
+                          <p style={{ margin: "4px 0", color: "#4b5563" }}>
+                            {item.neck} | {item.sleeve}
+                          </p>
+                          <p style={{ margin: "4px 0", color: "#4b5563" }}>
+                            {item.fabric} | {item.printStyle}
+                          </p>
+                          <p style={{ margin: "10px 0 0", fontWeight: 700 }}>
+                            {formatCurrency(item.price * item.quantity)}
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={() => removeFromCart(item.cartId)}
+                          style={secondaryButtonStyle}
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "14px" }}>
+                        <button
+                          onClick={() => updateCartQuantity(item.cartId, -1)}
+                          style={secondaryButtonStyle}
+                        >
+                          -
+                        </button>
+                        <div
+                          style={{
+                            minWidth: "58px",
+                            textAlign: "center",
+                            padding: "10px 12px",
+                            borderRadius: "12px",
+                            background: "#f3f4f6",
+                            fontWeight: 700
+                          }}
+                        >
+                          {item.quantity}
+                        </div>
+                        <button
+                          onClick={() => updateCartQuantity(item.cartId, 1)}
+                          style={secondaryButtonStyle}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <aside style={sectionCardStyle}>
+              <h2 style={{ marginTop: 0 }}>Order Summary</h2>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "12px 0",
+                  borderBottom: "1px solid #e5e7eb"
+                }}
+              >
+                <span>Items</span>
+                <span>{cartCount}</span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "12px 0",
+                  borderBottom: "1px solid #e5e7eb"
+                }}
+              >
+                <span>Shipping</span>
+                <span>Free</span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "16px 0 0",
+                  fontWeight: 700,
+                  fontSize: "18px"
+                }}
+              >
+                <span>Total</span>
+                <span>{formatCurrency(cartTotal)}</span>
+              </div>
+
+              <button
+                onClick={() => navigateTo("checkout")}
+                style={{
+                  ...primaryButtonStyle,
+                  width: "100%",
+                  marginTop: "22px"
+                }}
+                disabled={cart.length === 0}
+              >
+                Proceed to Checkout
+              </button>
+            </aside>
+          </div>
+        </div>
+      )}
+
+      {activePage === "checkout" && (
+        <div style={pageShellStyle}>
+          <BackButton />
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+              gap: "24px"
+            }}
+          >
+            <section style={sectionCardStyle}>
+              <h2 style={{ marginTop: 0 }}>Checkout Details</h2>
+              <div style={{ display: "grid", gap: "14px" }}>
+                <input
+                  name="name"
+                  value={checkoutForm.name}
+                  onChange={handleCheckoutChange}
+                  placeholder="Full name"
+                  style={inputStyle}
+                />
+                <input
+                  name="phone"
+                  value={checkoutForm.phone}
+                  onChange={handleCheckoutChange}
+                  placeholder="Phone number"
+                  style={inputStyle}
+                />
+                <input
+                  name="address"
+                  value={checkoutForm.address}
+                  onChange={handleCheckoutChange}
+                  placeholder="Full address"
+                  style={inputStyle}
+                />
+                <input
+                  name="city"
+                  value={checkoutForm.city}
+                  onChange={handleCheckoutChange}
+                  placeholder="City"
+                  style={inputStyle}
+                />
+                <input
+                  name="pincode"
+                  value={checkoutForm.pincode}
+                  onChange={handleCheckoutChange}
+                  placeholder="Pincode"
+                  style={inputStyle}
+                />
+                <input
+                  name="landmark"
+                  value={checkoutForm.landmark}
+                  onChange={handleCheckoutChange}
+                  placeholder="Landmark (optional)"
+                  style={inputStyle}
+                />
+              </div>
+            </section>
+
+            <aside style={sectionCardStyle}>
+              <h2 style={{ marginTop: 0 }}>Delivery Summary</h2>
+              {cart.map((item) => (
+                <div
+                  key={item.cartId}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: "12px",
+                    padding: "12px 0",
+                    borderBottom: "1px solid #e5e7eb"
+                  }}
+                >
+                  <div>
+                    <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{item.name}</p>
+                    <p style={{ margin: 0, color: "#6b7280", fontSize: "14px" }}>
+                      {item.size} | {item.color} | Qty {item.quantity}
+                    </p>
+                  </div>
+                  <span>{formatCurrency(item.price * item.quantity)}</span>
+                </div>
+              ))}
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  paddingTop: "16px",
+                  fontWeight: 700
+                }}
+              >
+                <span>Total</span>
+                <span>{formatCurrency(cartTotal)}</span>
+              </div>
+
+              <button
+                onClick={proceedToPayment}
+                style={{
+                  ...primaryButtonStyle,
+                  width: "100%",
+                  marginTop: "22px"
+                }}
+              >
+                Continue to Payment
+              </button>
+            </aside>
+          </div>
+        </div>
+      )}
+
+      {activePage === "paymentMethod" && (
+        <div style={pageShellStyle}>
+          <BackButton />
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+              gap: "24px"
+            }}
+          >
+            <section style={sectionCardStyle}>
+              <h2 style={{ marginTop: 0 }}>Select Payment Method</h2>
+              <div style={{ display: "grid", gap: "14px" }}>
+                {paymentOptions.map((option) => (
+                  <div
+                    key={option.value}
+                    style={getPaymentCardStyle(paymentMethod === option.value)}
+                    onClick={() => setPaymentMethod(option.value)}
+                  >
+                    <h3 style={{ margin: "0 0 8px" }}>{option.title}</h3>
+                    <p style={{ margin: 0, color: "#6b7280" }}>{option.description}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <aside style={sectionCardStyle}>
+              <h2 style={{ marginTop: 0 }}>Final Summary</h2>
+              <p style={{ color: "#6b7280", lineHeight: 1.7 }}>
+                Deliver to: {checkoutForm.name || "Guest"}, {checkoutForm.address || "-"},{" "}
+                {checkoutForm.city || "-"} {checkoutForm.pincode || ""}
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "12px 0",
+                  borderBottom: "1px solid #e5e7eb"
+                }}
+              >
+                <span>Items</span>
+                <span>{cartCount}</span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "12px 0",
+                  borderBottom: "1px solid #e5e7eb"
+                }}
+              >
+                <span>Chosen payment</span>
+                <span>
+                  {paymentOptions.find((option) => option.value === paymentMethod)?.title}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  paddingTop: "16px",
+                  fontWeight: 700,
+                  fontSize: "18px"
+                }}
+              >
+                <span>Total</span>
+                <span>{formatCurrency(cartTotal)}</span>
+              </div>
+
+              <button
+                onClick={placeOrder}
+                style={{
+                  ...primaryButtonStyle,
+                  width: "100%",
+                  marginTop: "22px"
+                }}
+              >
+                Place Order
+              </button>
+            </aside>
+          </div>
+        </div>
+      )}
+
+      {activePage === "orders" && (
+        <div style={pageShellStyle}>
+          <BackButton />
+          <div style={sectionCardStyle}>
+            <h2 style={{ marginTop: 0 }}>My Orders</h2>
+            {orders.length === 0 ? (
+              <p style={{ marginBottom: 0, color: "#6b7280" }}>
+                No orders yet. After checkout, confirmed orders will appear here.
+              </p>
+            ) : (
+              <div style={{ display: "grid", gap: "18px" }}>
+                {orders.map((order) => (
+                  <div
+                    key={order.id}
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "18px",
+                      padding: "20px"
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: "12px"
+                      }}
+                    >
+                      <div>
+                        <h3 style={{ margin: "0 0 6px" }}>{order.id}</h3>
+                        <p style={{ margin: 0, color: "#6b7280" }}>{order.date}</p>
+                      </div>
+                      <div
+                        style={{
+                          padding: "8px 12px",
+                          borderRadius: "999px",
+                          background: "#dcfce7",
+                          color: "#166534",
+                          fontWeight: 700
+                        }}
+                      >
+                        {order.status}
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: "16px", display: "grid", gap: "10px" }}>
+                      {order.items.map((item) => (
+                        <div
+                          key={item.cartId}
+                          style={{
+                            padding: "14px",
+                            borderRadius: "14px",
+                            background: "#f8fafc"
+                          }}
+                        >
+                          <strong>{item.name}</strong>
+                          <p style={{ margin: "6px 0 0", color: "#4b5563" }}>
+                            {item.color} | {item.size} | {item.fit} | Qty {item.quantity}
+                          </p>
+                          <p style={{ margin: "6px 0 0", color: "#4b5563" }}>
+                            {item.neck} | {item.sleeve} | {item.fabric}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: "12px",
+                        marginTop: "16px"
+                      }}
+                    >
+                      <div>
+                        <p style={{ margin: "0 0 6px", color: "#6b7280" }}>Delivery to</p>
+                        <p style={{ margin: 0 }}>
+                          {order.customer.name}, {order.customer.address}, {order.customer.city},{" "}
+                          {order.customer.pincode}
+                        </p>
+                      </div>
+                      <div>
+                        <p style={{ margin: "0 0 6px", color: "#6b7280" }}>Payment</p>
+                        <p style={{ margin: 0 }}>
+                          {paymentOptions.find((option) => option.value === order.paymentMethod)?.title}
+                        </p>
+                      </div>
+                      <div>
+                        <p style={{ margin: "0 0 6px", color: "#6b7280" }}>Total</p>
+                        <p style={{ margin: 0, fontWeight: 700 }}>{formatCurrency(order.total)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activePage === "wallet" && (
+        <div style={pageShellStyle}>
+          <BackButton />
+          <div
+            style={{
+              ...sectionCardStyle,
+              background:
+                "linear-gradient(135deg, rgba(17,17,17,0.95), rgba(14,116,144,0.92))",
+              color: "#ffffff"
+            }}
+          >
+            <p
+              style={{
+                marginTop: 0,
+                fontSize: "13px",
+                letterSpacing: "3px",
+                textTransform: "uppercase",
+                color: "#bfdbfe"
+              }}
+            >
+              Wallet
+            </p>
+            <h2 style={{ margin: "8px 0 6px", fontSize: "42px" }}>{auraPoints} Aura Points</h2>
+            <p style={{ margin: 0, color: "rgba(255,255,255,0.82)", lineHeight: 1.7 }}>
+              1 Aura Point can be used like 1 INR on future orders. This section is now
+              connected and ready for payment method selection.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {activePage === "terms" && (
+        <div style={pageShellStyle}>
+          <BackButton />
+          <div style={sectionCardStyle}>
+            <h2 style={{ marginTop: 0 }}>Terms and Conditions</h2>
+            <p style={{ color: "#4b5563", lineHeight: 1.8 }}>
+              By using this website and placing an order, the customer agrees to
+              the store terms. Products must be used lawfully, pricing errors may
+              be corrected, returns are only reviewed for approved cases, and
+              Aura Points remain non-transferable. Orders become final after
+              confirmation, and delivery delays from courier partners are outside
+              direct store control.
+            </p>
+            <p style={{ color: "#4b5563", lineHeight: 1.8, marginBottom: 0 }}>
+              The store may update product details, pricing, and policy text when
+              required. For any issue, customers can contact
+              vastraaura@gmail.com.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

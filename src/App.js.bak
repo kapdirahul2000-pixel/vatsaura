@@ -1,0 +1,728 @@
+import React, { useState, useEffect, useRef } from "react";
+import "./App.css";
+import { auth } from "./firebase";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import logoVideo from "./logo.mp4";
+import logo from "./logo.png";
+
+export default function App() {
+
+const [user, setUser] = useState(null);
+const [menuOpen, setMenuOpen] = useState(false);
+const [activePage, setActivePage] = useState("home");
+const [history, setHistory] = useState(["home"]);
+
+const [showTshirtMenu, setShowTshirtMenu] = useState(false);
+const [showShirtMenu, setShowShirtMenu] = useState(false);
+
+// 🧠 FILTER STATE
+const [selectedCategory, setSelectedCategory] = useState(null);
+const [cart, setCart] = useState([]);
+const [showAdded, setShowAdded] = useState(false);
+
+const cartCount = cart.length;
+
+const [flyItem, setFlyItem] = useState(null);
+const [adminProducts, setAdminProducts] = useState([]);
+      useEffect(() => {
+      setAdminProducts(products);
+}, []);
+const [editProduct, setEditProduct] = useState(null);
+const cartIconRef = useRef(null);
+const addToCart = (item) => {
+  setCart((prev) => [...prev, item]);
+
+  // 🚀 flying animation trigger
+  setFlyItem(item);
+
+  setTimeout(() => {
+    setFlyItem(null);
+  }, 800);
+
+  // normal toast
+  setShowAdded(true);
+
+  setTimeout(() => {
+    setShowAdded(false);
+  }, 1000);
+};
+const products = [
+  { id: 1, name: "Krishna T-Shirt", category: "krishna", price: 499 },
+  { id: 2, name: "Mahadev T-Shirt", category: "mahadev", price: 499 },
+  { id: 3, name: "Hanuman T-Shirt", category: "hanuman", price: 499 },
+  { id: 4, name: "Narsimha T-Shirt", category: "narsimha", price: 499 },
+  { id: 5, name: "Yodha T-Shirt", category: "yodha", price: 599 },
+  { id: 6, name: "Astra T-Shirt", category: "astra", price: 699 }
+];
+
+// ✅ REFS
+const tshirtRef = useRef(null);
+const shirtRef = useRef(null);
+const menuRef = useRef(null);
+
+// ---------------- LOGIN ----------------
+const loginWithGoogle = async () => {
+  try {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+
+    setUser({
+      name: result.user.displayName,
+      email: result.user.email,
+      photo: result.user.photoURL
+    });
+
+    setMenuOpen(false);
+
+  } catch (err) {
+    console.log(err);
+    alert("Login failed");
+  }
+};
+
+// ---------------- LOGOUT ----------------
+const logout = () => {
+ 
+  setUser(null);
+  setActivePage("home");
+  setMenuOpen(false);
+};
+
+// ---------------- BACK BUTTON ----------------
+
+const BackButton = () => (
+
+<button
+onClick={() => setActivePage("home")}
+style={{
+marginBottom: "30px",
+padding: "10px 20px",
+borderRadius: "10px",
+border: "none",
+background: "black",
+color: "white",
+cursor: "pointer"
+}}
+>
+Back
+</button>
+);
+
+// ---------------- OUTSIDE CLICK ----------------
+useEffect(() => {
+  const handleClickOutside = (event) => {
+
+    if (tshirtRef.current && !tshirtRef.current.contains(event.target)) {
+      setShowTshirtMenu(false);
+    }
+
+    if (shirtRef.current && !shirtRef.current.contains(event.target)) {
+      setShowShirtMenu(false);
+    }
+
+    if (menuRef.current && !menuRef.current.contains(event.target)) {
+      setMenuOpen(false);
+    }
+
+  };
+
+  document.addEventListener("mousedown", handleClickOutside);
+
+  return () => {
+    document.removeEventListener("mousedown", handleClickOutside);
+  };
+}, []);
+
+return (
+<div style={{ fontFamily: "Arial" }}>
+<style>
+{`
+@keyframes cartPop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+`}
+</style>
+{/* ================= NAVBAR ================= */}
+<nav style={{
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "10px",
+  backgroundColor: "black",
+  color: "white",
+  position: "relative"
+}}>
+
+{/* LEFT */}
+<div style={{ display: "flex", alignItems: "center", gap: "18px" }}>
+
+<div style={{ fontSize: "26px", cursor: "pointer" }}
+onClick={() => setMenuOpen(true)}>☰</div>
+
+{/* TSHIRT */}
+<div style={{ position: "relative" }} ref={tshirtRef}>
+<h3 onClick={() => setShowTshirtMenu(!showTshirtMenu)} style={{ cursor: "pointer" }}>
+T-Shirts
+</h3>
+
+{showTshirtMenu && (
+<div style={dropdownStyle}>
+<p
+  style={dropItem}
+  onClick={() => setSelectedCategory("krishna")}
+>
+  Krishna
+</p>
+<p
+  style={dropItem}
+  onClick={() => setSelectedCategory("mahadev")}
+>
+  Mahadev
+</p>
+<p
+  style={dropItem}
+  onClick={() => setSelectedCategory("hanuman")}
+>
+  Hanuman
+</p>
+<p
+  style={dropItem}
+  onClick={() => setSelectedCategory("narsimha")}
+>
+  Narsimha
+</p>
+<p
+  style={dropItem}
+  onClick={() => setSelectedCategory("yodha")}
+>
+  Yodha
+</p>
+<p
+  style={dropItem}
+  onClick={() => setSelectedCategory("astra")}
+>
+  Astra
+</p>
+</div>
+)}
+</div>
+
+{/* SHIRTS */}
+<div style={{ position: "relative" }} ref={shirtRef}>
+<h3 onClick={() => setShowShirtMenu(!showShirtMenu)} style={{ cursor: "pointer" }}>
+Shirts
+</h3>
+
+{showShirtMenu && (
+<div style={dropdownStyle}>
+<p style={dropItem}>Embroidery</p>
+<p style={dropItem}>Plain</p>
+</div>
+)}
+</div>
+
+</div>
+
+{/* CENTER */}
+<div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+<video src={logoVideo} autoPlay loop muted style={{ height: "120px" }} />
+<h2 style={{ margin: 0 }}></h2>
+</div>
+
+{/* RIGHT */}
+<div style={{ display: "flex", alignItems: "center", gap: "18px" }}>
+
+<div style={{
+  display: "flex",
+  alignItems: "center",
+  border: "2px solid white",
+  borderRadius: "20px",
+  padding: "4px 10px",
+  gap: "6px",
+  background: "transparent"
+}}>
+<input
+placeholder="Search"
+style={{
+border: "none",
+outline: "none",
+background: "transparent",
+color: "white",
+width: "120px",
+fontSize: "16px"
+}}
+/>
+</div>
+
+{/* WALLET */}
+<svg onClick={()=>setActivePage("wallet")} width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" style={{ cursor: "pointer" }}>
+<rect x="3" y="7" width="18" height="12" rx="2"/>
+<circle cx="17" cy="13" r="1"/>
+</svg>
+
+{/* LIKE */}
+<svg onClick={()=>setActivePage("wishlist")} width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" style={{ cursor: "pointer" }}>
+<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/>
+</svg>
+
+{/* CART */}
+<div
+  ref={cartIconRef}
+  style={{ position: "relative", cursor: "pointer" }}
+  onClick={() => setActivePage("cart")}
+>
+
+  {/* CART ICON */}
+  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+    <circle cx="9" cy="21" r="1"/>
+    <circle cx="20" cy="21" r="1"/>
+    <path d="M1 1h4l2 13h13l2-8H6"/>
+  </svg>
+
+  {/* BADGE */}
+  {cartCount > 0 && (
+    <div
+      style={{
+        position: "absolute",
+        top: "-6px",
+        right: "-6px",
+        background: "linear-gradient(135deg,#ff4d4d,#ff1a75)",
+        color: "white",
+        borderRadius: "50%",
+        minWidth: "18px",
+        height: "18px",
+        fontSize: "11px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontWeight: "bold",
+        boxShadow: "0 4px 10px rgba(0,0,0,0.3)",
+       animation: "cartPop 0.3s ease",
+      }}
+    >
+      {cartCount}
+    </div>
+  )}
+
+</div>
+</div>
+</nav>
+
+{showAdded && (
+  <div style={{
+    position: "fixed",
+    top: "80px",
+    right: "20px",
+    background: "grey",
+    color: "white",
+    padding: "10px 20px",
+    borderRadius: "8px",
+    zIndex: 9999
+  }}>
+    {flyItem && (
+  <div
+    style={{
+      position: "fixed",
+      top: "60%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      width: "40px",
+      height: "40px",
+      background: "black",
+      color: "white",
+      borderRadius: "10px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: "18px",
+      zIndex: 9999,
+      animation: "flyToCart 0.8s ease forwards"
+    }}
+  >
+    🛒
+  </div>
+)}
+    Added to Cart⚡
+  </div>
+)}
+
+{/* SIDE MENU */}
+{menuOpen && (
+<div ref={menuRef}
+style={{
+position: "fixed",
+top: 0,
+left: 0,
+width: "260px",
+height: "100%",
+background: "black",
+color: "white",
+padding: "20px"
+}}>
+
+<div style={{ fontSize: "22px", cursor: "pointer" }}
+onClick={()=>setMenuOpen(false)}>✕</div>
+
+<div style={{ marginTop: "20px" }}>
+{user ? (
+<>
+<img src={user.photo} style={{ width: "50px", borderRadius: "50%" }} />
+<h3>{user.name}</h3>
+</>
+) : (
+<h3>Guest User</h3>
+)}
+</div>
+
+{!user && (
+<button onClick={loginWithGoogle}
+style={{
+width: "100%",
+padding: "10px",
+marginTop: "10px",
+background: "white",
+border: "none",
+borderRadius: "6px",
+fontWeight: "bold"
+}}>
+Continue with Google
+</button>
+)}
+
+{user && (
+<div style={{ marginTop: "20px" }}>
+<p style={menuStyle} onClick={()=>setActivePage("orders")}>My Orders</p>
+<p style={menuStyle} onClick={()=>setActivePage("wallet")}>Wallet</p>
+<p style={menuStyle} onClick={()=>alert("Contact: vastraaura@gmail.com")}>Contact Us</p>
+<p style={menuStyle} onClick={()=>setActivePage("terms")}>T&C</p>
+<p style={menuStyle} onClick={logout}>Logout</p>
+</div>
+)}
+
+</div>
+)}
+
+{/* PAGES */}
+{activePage==="home" && (
+<div style={{ textAlign: "center", padding: "40px" }}>
+  {selectedCategory ? (
+  <div style={{ padding: "20px", textAlign: "center" }}>
+
+    <h2>{selectedCategory.toUpperCase()} PRODUCTS</h2>
+
+    <div style={{
+      display: "flex",
+      gap: "20px",
+      flexWrap: "wrap",
+      justifyContent: "center"
+    }}>
+
+      {products
+        .filter((p) => p.category === selectedCategory)
+        .map((p) => (
+          <div key={p.id} style={{
+            border: "1px solid #ccc",
+            padding: "15px",
+            borderRadius: "10px",
+            width: "200px"
+          }}>
+
+            <h3>{p.name}</h3>
+            <p>₹ {p.price}</p>
+
+            <button
+              onClick={() => addToCart(p)}
+              style={{
+                padding: "8px",
+                background: "black",
+                color: "white",
+                border: "none",
+                borderRadius: "5px"
+              }}
+            >
+              Add to Cart
+            </button>
+
+          </div>
+      ))}
+
+    </div>
+
+  </div>
+) : null}
+<h1>GET READY TO LEVEL UP YOUR AURA.</h1>
+<p>The vastra inspired by hinduism.</p>
+</div>
+)}
+
+{activePage==="wallet" && (
+<div style={{ padding: "20px" }}>
+<BackButton />
+<h2>Wallet</h2>
+<p>Aura Points: 00</p>
+</div>
+)}
+
+{activePage==="wishlist" && (
+<div style={{ padding: "20px" }}>
+<BackButton />
+<h2>Wishlist</h2>
+</div>
+)}
+
+{activePage==="cart" && (
+  <div style={{ padding: "20px" }}>
+    <BackButton />
+    <h2>Cart</h2>
+
+    {cart.length === 0 ? (
+      <p>Cart is empty</p>
+    ) : (
+      cart.map((item, index) => (
+        <div key={index} style={{
+          border: "1px solid #ccc",
+          padding: "10px",
+          margin: "10px",
+          borderRadius: "10px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center"
+        }}>
+
+          <div>
+            <h3>{item.name}</h3>
+            <p>₹ {item.price}</p>
+          </div>
+
+          {/* REMOVE BUTTON */}
+          <button
+            onClick={() => {
+              setCart(cart.filter((_, i) => i !== index));
+            }}
+            style={{
+              background: "black",
+              color: "white",
+              border: "none",
+              padding: "6px 10px",
+              borderRadius: "6px",
+              cursor: "pointer"
+            }}
+          >
+            Remove
+          </button>
+
+        </div>
+      ))
+    )}
+
+    {/* PLACE ORDER BUTTON */}
+    {cart.length > 0 && (
+      <button
+        onClick={() => setActivePage("checkout")}
+        style={{
+          marginTop: "20px",
+          padding: "10px 20px",
+          background: "green",
+          color: "white",
+          border: "none",
+          borderRadius: "8px",
+          cursor: "pointer",
+          width: "100%"
+        }}
+      >
+        Place Order
+      </button>
+    )}
+
+  </div>
+)}
+
+{activePage === "checkout" && (
+  <div style={{ padding: "20px" }}>
+    <BackButton />
+
+    <h2>Checkout</h2>
+
+    <input
+      placeholder="Enter Name"
+      style={{
+        display: "block",
+        margin: "10px 0",
+        padding: "8px",
+        width: "100%"
+      }}
+    />
+
+    <input
+      placeholder="Enter Address"
+      style={{
+        display: "block",
+        margin: "10px 0",
+        padding: "8px",
+        width: "100%"
+      }}
+    />
+
+    <input
+      placeholder="Phone Number"
+      style={{
+        display: "block",
+        margin: "10px 0",
+        padding: "8px",
+        width: "100%"
+      }}
+    />
+
+    {/* CONFIRM ORDER BUTTON (FIXED) */}
+    <button
+      onClick={() => {
+        setHistory(prev => [...prev, "paymentMethod"]);
+        setActivePage("paymentMethod");
+      }}
+      style={{
+        marginTop: "20px",
+        padding: "10px",
+        width: "100%",
+        background: "black",
+        color: "white",
+        border: "none",
+        borderRadius: "8px",
+        cursor: "pointer"
+      }}
+    >
+      Confirm Order
+    </button>
+
+  </div>
+)}
+
+{activePage === "paymentMethod" && (
+  <div style={{ padding: "20px" }}>
+    <BackButton />
+
+    <h2>Payment Method</h2>
+
+    {/* WALLET / AURA POINTS */}
+    <div style={{
+      border: "1px solid #ccc",
+      padding: "15px",
+      borderRadius: "10px",
+      marginTop: "20px"
+    }}>
+      <h3>Pay with Aura Points</h3>
+      <p>Your Balance: 0 Aura Points</p>
+    </div>
+
+    {/* UPI OPTION */}
+    <div style={{
+      marginTop: "20px",
+      padding: "15px",
+      border: "1px solid #ccc",
+      borderRadius: "10px"
+    }}>
+      <h3>Pay with any UPI App</h3>
+      <p>Google Pay / PhonePe / Paytm / BHIM</p>
+    </div>
+
+    {/* CONFIRM ORDER BUTTON */}
+    <button
+      onClick={() => setActivePage("orders")}
+      style={{
+        marginTop: "30px",
+        width: "100%",
+        padding: "12px",
+        background: "black",
+        color: "white",
+        border: "none",
+        borderRadius: "8px",
+        fontSize: "16px",
+        cursor: "pointer"
+      }}
+    >
+      Confirm Order
+    </button>
+  </div>
+)}
+
+{activePage==="orders" && (
+<div style={{ padding: "20px" }}>
+<BackButton />
+<h2>My Orders</h2>
+</div>
+)}
+
+{activePage==="terms" && (
+<div style={{ maxWidth: "800px", margin: "20px auto", padding: "20px", background: "#fff", borderRadius: "10px", boxShadow: "0 2px 10px rgba(0,0,0,0.1)", lineHeight: "1.6" }}>
+<BackButton />
+<h2>Terms & Conditions</h2>
+
+<h3>Acceptance of Terms</h3>
+<p>-By accessing, browsing, or using this website, and/or by placing an order, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions. If you do not agree with any part of these Terms, you are advised not to use this website or its services.
+</p>
+<h3>General Terms of Use</h3>
+<p>-By using this website, you agree to use it only for lawful purposes and in a manner that does not violate any applicable laws or regulations. You must not misuse the website by engaging in fraudulent activities, transmitting harmful content, or attempting to gain unauthorized access to the website or its systems. The Company reserves the right to restrict, suspend, or terminate access to the website at its sole discretion if any misuse or violation of these Terms is detected.
+</p>
+<h3>Limitation of Liability</h3>
+<p>-The Company shall not be held liable for any direct, indirect, incidental, or consequential damages arising out of or in connection with the use of this website, its services, or products purchased through it. This includes, but is not limited to, delays in delivery, loss of data, or any other issues beyond the reasonable control of the Company. By using this website, you agree that the Company’s liability, if any, shall be limited to the maximum extent permitted by applicable law.
+</p>
+<h3>Aura Points Value</h3>
+<p>-Aura point is equivalent to 1 INR.However,the company reserves the right to modify,change or update the value at any time without prior notice.</p>
+<p>-Aura Points are non-transferable and may be redeemed solely for purchases made on the Vastraaura website. Aura Points hold no cash value, are not refundable, and cannot be exchanged, converted, or redeemed for cash under any circumstances</p>
+<h3>Return Policy</h3>
+<p>-Returns will only be considered if a return request is submitted via email within 24 hours of delivery. The request must include a detailed description of the issue along with clear images of the product. All returns are subject to review and approval by the company, and only approved requests will be eligible for return processing.</p>
+<p>1. Eligibility for Return-
+Products must be unused, unwashed, and in their original condition with all tags and packaging intact. The Company reserves the right to reject returns that do not meet these conditions.</p>
+<p>2. Return Shipping Responsibility-
+The responsibility for return shipping costs shall be borne by the customer unless otherwise stated by the Company.</p>
+<h3>Approval Rights</h3>
+<p>-The Company reserves the sole and absolute right to accept or reject any return request at its discretion, based on the condition of the product and the reason provided by the customer. In the event a return is approved, the Company may, at its discretion, offer a replacement product or issue Aura Points, which can be used for future purchases on the Vastraaura website. </p>
+<h3>Cancellation policy</h3>
+<p>-Once an order has been successfully placed and confirmed, it shall be considered final and binding. The Company does not permit cancellations after the order has been placed. Customers are therefore advised to carefully review all order details, including product specifications, quantity, and delivery information, before completing the purchase. Any requests for cancellation made after order confirmation will not be entertained under any circumstances.</p>
+<h3>Pricing & Errors</h3>
+<p>-In the event of any pricing errors or incorrect product information displayed on the website, the Company reserves the right to cancel or refuse any orders placed for such products.</p>
+<h3>Delivery issue</h3>
+<p>-The Company shall not be held liable for any delays in delivery caused by courier services or unforeseen logistical issues.</p>
+<h3>Modification of Terms</h3>
+<p>-The Company reserves the right to update, modify, or change these Terms and Conditions at any time without prior notice.</p>
+</div>
+)}
+
+</div>
+);
+}
+
+// ---------------- STYLES ----------------
+const menuStyle = {
+padding: "10px",
+borderBottom: "1px solid grey",
+cursor: "pointer"
+};
+
+const dropdownStyle = {
+position: "absolute",
+top: "35px",
+left: "0",
+background: "white",
+color: "black",
+borderRadius: "8px",
+boxShadow: "0 5px 15px rgba(0,0,0,0.2)",
+padding: "8px",
+minWidth: "150px",
+zIndex: 1000
+};
+
+const dropItem = {
+padding: "8px",
+cursor: "pointer",
+borderBottom: "1px solid #eee"
+};

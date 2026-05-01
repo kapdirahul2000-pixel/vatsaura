@@ -1,0 +1,93 @@
+@font-face {
+  font-family: "Aviano Flare";
+  src:
+    url("./assets/fonts/AvianoFlare-Medium.eot");
+  src:
+    local("Aviano Flare Medium"),
+    local("AvianoFlare-Medium"),
+    url("./assets/fonts/AvianoFlare-Medium.eot?#iefix") format("embedded-opentype"),
+    url("./assets/fonts/AvianoFlare-Medium.woff2") format("woff2"),
+    url("./assets/fonts/AvianoFlare-Medium.woff") format("woff"),
+    url("./assets/fonts/AvianoFlare-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --site-font-family: "Aviano Flare", serif;
+}
+
+html {
+  scroll-behavior: smooth;
+  font-size: 13px;
+  font-family: var(--site-font-family) !important;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #050505;
+  color: #101010;
+  font-family: var(--site-font-family) !important;
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  font-family: inherit;
+}
+
+#root,
+#root *,
+#root *::before,
+#root *::after {
+  font-family: var(--site-font-family) !important;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea,
+option,
+optgroup {
+  font: inherit !important;
+  font-family: var(--site-font-family) !important;
+}
+
+button {
+  cursor: pointer;
+}
+
+input::placeholder,
+textarea::placeholder,
+select,
+option,
+optgroup {
+  font-family: var(--site-font-family) !important;
+}
+
+img,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+}
+
+::selection {
+  background: #111111;
+  color: #ffffff;
+}
+
+code {
+  font-family: var(--site-font-family) !important;
+}
