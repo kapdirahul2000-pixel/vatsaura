@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { auth } from "./firebase";
 import {
@@ -58,7 +58,7 @@ const paymentCatalog = [
   {
     value: "upi",
     title: "UPI QR",
-    description: "Scan and pay using your admin-configured UPI QR"
+    description: "Scan and pay using our configured UPI QR"
   },
   {
     value: "cod",
@@ -1387,33 +1387,34 @@ export default function App() {
   const activeAdminEmail = isAdminOwner ? userEmail : frontendAdminEmail;
   const configuredAdminAccountsLabel =
     ADMIN_EMAILS.length > 0 ? ADMIN_EMAILS.join(", ") : "not configured";
-  const currentUserRecord = users.find(
-    (entry) => entry.email?.toLowerCase() === userEmail
+  const currentUserRecord = useMemo(() => 
+    users.find((entry) => entry.email?.toLowerCase() === userEmail),
+    [users, userEmail]
   );
-  const auraPoints = Number(currentUserRecord?.auraPoints || 0);
+  const auraPoints = useMemo(() => Number(currentUserRecord?.auraPoints || 0), [currentUserRecord]);
   const siteName = settings.websiteName || defaultSettings.websiteName;
   const storeTermsAndConditions =
     settings.termsAndConditions || defaultSettings.termsAndConditions;
   const storePrivacyPolicy = settings.privacyPolicy || defaultSettings.privacyPolicy;
-  const managedTshirtCategories = sanitizeTshirtCategories(settings.tshirtCategories);
-  const selectedProduct = products.find((item) => item.id === selectedProductId) || null;
-  const enabledPaymentOptions = paymentCatalog.filter(
+  const managedTshirtCategories = useMemo(() => sanitizeTshirtCategories(settings.tshirtCategories), [settings.tshirtCategories]);
+  const selectedProduct = useMemo(() => products.find((item) => item.id === selectedProductId) || null, [products, selectedProductId]);
+  const enabledPaymentOptions = useMemo(() => paymentCatalog.filter(
     (option) => settings.paymentMethods?.[option.value]
-  );
-  const cartCount = cart.reduce((count, item) => count + Number(item.quantity || 0), 0);
-  const cartTotal = cart.reduce(
+  ), [settings.paymentMethods]);
+  const cartCount = useMemo(() => cart.reduce((count, item) => count + Number(item.quantity || 0), 0), [cart]);
+  const cartTotal = useMemo(() => cart.reduce(
     (total, item) => total + Number(item.unitPrice || 0) * Number(item.quantity || 0),
     0
-  );
-  const dailySales = getRangeTotal(orders, startOfToday());
-  const weeklySales = getRangeTotal(orders, startOfWeek());
-  const monthlySales = getRangeTotal(orders, startOfMonth());
-  const totalSales = sumSales(orders);
+  ), [cart]);
+  const dailySales = useMemo(() => getRangeTotal(orders, startOfToday()), [orders]);
+  const weeklySales = useMemo(() => getRangeTotal(orders, startOfWeek()), [orders]);
+  const monthlySales = useMemo(() => getRangeTotal(orders, startOfMonth()), [orders]);
+  const totalSales = useMemo(() => sumSales(orders), [orders]);
   const brandMediaSource = settings.logoData || brandHeaderVideo;
   const brandMediaIsVideo = isVideoSource(brandMediaSource);
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
   const hasActiveSearch = Boolean(normalizedSearchTerm);
-  const searchSuggestions = hasActiveSearch
+  const searchSuggestions = useMemo(() => hasActiveSearch
     ? products
         .filter(
           (product) =>
@@ -1432,17 +1433,17 @@ export default function App() {
           return Number(right.createdAt || 0) - Number(left.createdAt || 0);
         })
         .slice(0, 6)
-    : [];
+    : [], [hasActiveSearch, products, normalizedSearchTerm]);
 
-  const tshirtCategories = [
+  const tshirtCategories = useMemo(() => [
     { value: "all", label: "All Collections" },
     ...managedTshirtCategories.map((category) => ({
         value: category,
         label: category
       }))
-  ];
+  ], [managedTshirtCategories]);
 
-  const filteredProducts = products
+  const filteredProducts = useMemo(() => products
     .filter((product) => {
       if (product.department !== "tshirts") {
         return false;
@@ -1472,50 +1473,58 @@ export default function App() {
       }
 
       return 0;
-    });
+    }), [products, hasActiveSearch, selectedDepartment, selectedCategory, normalizedSearchTerm, sortBy]);
 
   const tshirtProducts = filteredProducts;
-  const availableProductCategories = productForm.category
+  const availableProductCategories = useMemo(() => productForm.category
     ? [...new Set([productForm.category, ...managedTshirtCategories])]
-    : managedTshirtCategories;
+    : managedTshirtCategories, [productForm.category, managedTshirtCategories]);
   const productFormImages = getProductImages(productForm);
   const productFormVideo = getProductVideo(productForm);
-  const selectedAdminOrder =
-    orders.find((order) => order.id === selectedAdminOrderId) || orders[0] || null;
-  const managedHomepageBanners = normalizeStoredBanners(settings.banners);
-  const homepageBanners =
+  const selectedAdminOrder = useMemo(() => 
+    orders.find((order) => order.id === selectedAdminOrderId) || orders[0] || null,
+    [orders, selectedAdminOrderId]
+  );
+  const managedHomepageBanners = useMemo(() => normalizeStoredBanners(settings.banners), [settings.banners]);
+  const homepageBanners = useMemo(() => 
     managedHomepageBanners.length > 0
       ? managedHomepageBanners
       : defaultSettings.banners
           .map((banner, index) => normalizeBanner(banner, index))
-          .slice(0, MAX_HOME_BANNERS);
-  const heroCarouselBanners =
-    homepageBanners.length > 1 ? [...homepageBanners, homepageBanners[0]] : homepageBanners;
+          .slice(0, MAX_HOME_BANNERS),
+    [managedHomepageBanners]
+  );
+  const heroCarouselBanners = useMemo(() => 
+    homepageBanners.length > 1 ? [...homepageBanners, homepageBanners[0]] : homepageBanners,
+    [homepageBanners]
+  );
   const activeHomepageBannerIndex =
     homepageBanners.length > 0 ? activeBannerIndex % homepageBanners.length : 0;
   const activeHomepageBanner =
     homepageBanners[activeHomepageBannerIndex] || homepageBanners[0] || null;
-  const activeHomepageBannerAspectRatio = normalizeAspectRatio(
+  const activeHomepageBannerAspectRatio = useMemo(() => normalizeAspectRatio(
     activeHomepageBanner?.aspectRatio,
     DEFAULT_BANNER_ASPECT_RATIO
-  );
-  const managedHomeHighlights = normalizeStoredHomeHighlights(settings.homeHighlights);
-  const latestDropProductIds = sanitizeStoredProductIds(
+  ), [activeHomepageBanner]);
+  const managedHomeHighlights = useMemo(() => normalizeStoredHomeHighlights(settings.homeHighlights), [settings.homeHighlights]);
+  const latestDropProductIds = useMemo(() => sanitizeStoredProductIds(
     settings.latestDropProductIds,
     MAX_LATEST_DROPS
-  );
-  const pinnedLatestDropProducts = latestDropProductIds
+  ), [settings.latestDropProductIds]);
+  const pinnedLatestDropProducts = useMemo(() => latestDropProductIds
     .map((productId) => products.find((item) => item.id === productId) || null)
-    .filter(Boolean);
-  const latestDropProducts =
+    .filter(Boolean), [latestDropProductIds, products]);
+  const latestDropProducts = useMemo(() => 
     pinnedLatestDropProducts.length > 0
       ? pinnedLatestDropProducts
       : [...products]
           .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
-          .slice(0, 4);
-  const availableLatestDropProducts = products.filter(
-    (product) => !latestDropProductIds.includes(product.id)
+          .slice(0, 4),
+    [pinnedLatestDropProducts, products]
   );
+  const availableLatestDropProducts = useMemo(() => products.filter(
+    (product) => !latestDropProductIds.includes(product.id)
+  ), [products, latestDropProductIds]);
 
   useEffect(() => {
     usersRef.current = users;
@@ -1929,7 +1938,7 @@ export default function App() {
       );
 
       if (existing?.status === "blocked") {
-        setToast("This user is blocked by admin.");
+        setToast("This account is currently suspended.");
         await signOut(auth);
         setUser(null);
           return;
@@ -2680,7 +2689,7 @@ export default function App() {
     }
 
     if (!paymentMethod) {
-      setToast("Enable a payment method from admin settings first.");
+      setToast("Payment methods are currently unavailable. Please contact support.");
       return;
     }
 
@@ -2690,7 +2699,7 @@ export default function App() {
 
     if (paymentMethod === "upi" && !isFullAuraPayment) {
       if (!settings.upiQrData) {
-        setToast("Upload your UPI QR in admin settings before taking UPI payments.");
+        setToast("UPI payment is currently unavailable. Please try another method or contact support.");
         return;
       }
 
@@ -4033,7 +4042,7 @@ export default function App() {
                   <p className="latest-drops-panel__eyebrow">Curated Fresh</p>
                   <h2 style={{ margin: "0 0 8px" }}>Latest Drops</h2>
                   <p style={{ margin: 0, color: tone.muted }}>
-                    Pin homepage products from the admin panel and control the order of this section anytime.
+                    Customize your homepage products and control the order of this section anytime.
                   </p>
                 </div>
                 <div style={{ minWidth: "220px" }}>
@@ -4057,7 +4066,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="empty-state-card" style={{ ...cardStyle, color: tone.muted, marginTop: "18px" }}>
-                  Add products from the admin panel to start your Latest Drops section.
+                  Add products to start your Latest Drops section.
                 </div>
               )}
             </section>
@@ -4550,7 +4559,7 @@ export default function App() {
             <div style={{ display: "grid", gap: "14px" }}>
               {enabledPaymentOptions.length === 0 ? (
                 <div style={{ color: tone.muted }}>
-                  No payment methods are enabled in admin settings.
+                  No payment methods are currently available.
                 </div>
               ) : (
                 enabledPaymentOptions.map((option) => (
@@ -4915,7 +4924,7 @@ export default function App() {
         </p>
         <h2 style={{ margin: "8px 0 6px", fontSize: "42px" }}>{formatCurrency(auraPoints)}</h2>
         <p style={{ margin: 0, color: "#d8d8d8", lineHeight: 1.7 }}>
-          Aura points are managed from the admin panel and can be used at checkout when the payment method is enabled.
+          Aura points are managed by the store and can be used at checkout when the payment method is enabled.
         </p>
       </div>
     </div>
@@ -5114,7 +5123,7 @@ export default function App() {
 
           {user && !isAdminOwner && (
             <p style={{ margin: 0, color: tone.muted, lineHeight: 1.8 }}>
-              This admin panel is reserved for the configured admin accounts: {configuredAdminAccountsLabel}.
+              This admin panel is reserved for configured administrator accounts.
             </p>
           )}
 
@@ -5443,9 +5452,7 @@ export default function App() {
           <div style={cardStyle}>
             <h2 style={{ marginTop: 0 }}>Admin Panel</h2>
             <p style={{ color: tone.muted }}>
-              Only the configured Google admin accounts can access the admin panel:
-              {" "}
-              {configuredAdminAccountsLabel}.
+              Only configured Google administrator accounts can access the admin panel.
             </p>
             {!user && (
               <button onClick={loginWithGoogle} style={primaryButtonStyle}>
@@ -7784,7 +7791,7 @@ export default function App() {
                 <>
                   <h3 style={{ marginBottom: "6px" }}>Guest User</h3>
                   <p style={{ marginTop: 0, color: "#bdbdbd" }}>
-                    Login for checkout, wallet and admin access.
+                    Login for checkout, wallet and account access.
                   </p>
                 </>
               )}

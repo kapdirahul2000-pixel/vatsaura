@@ -49,6 +49,7 @@
   min-height: 6.2rem;
   backdrop-filter: blur(18px);
   transition: transform 240ms ease, background 240ms ease;
+  will-change: transform;
 }
 
 .nav-shell--hidden {
@@ -334,6 +335,7 @@
 .drawer-logout,
 .product-card__media {
   transition: transform 220ms ease, box-shadow 220ms ease, opacity 220ms ease;
+  will-change: transform, box-shadow, opacity;
 }
 
 .icon-button:hover,
@@ -1419,6 +1421,7 @@
   opacity: 0;
   transform: translateY(28px);
   transition: opacity 420ms ease, transform 420ms ease;
+  will-change: transform, opacity;
 }
 
 .js-reveal.is-visible {
