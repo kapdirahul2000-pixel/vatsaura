@@ -43,7 +43,7 @@ const configuredAdminEmails = parseEmailList(
 const config = {
   port: Number(process.env.SERVER_PORT || 4000),
   clientOrigin: String(process.env.CLIENT_ORIGIN || "http://localhost:3000").trim(),
-  appName: String(process.env.APP_NAME || "Vastra Aura").trim(),
+  appName: String(process.env.APP_NAME || "Vatsaura").trim(),
   ownerEmails: configuredAdminEmails,
   ownerEmail: configuredAdminEmails[0] || DEFAULT_ADMIN_EMAILS[0],
   ownerPhone: String(process.env.ADMIN_OWNER_PHONE || "").trim(),

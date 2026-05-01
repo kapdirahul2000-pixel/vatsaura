@@ -401,7 +401,7 @@ const DEFAULT_HOME_HIGHLIGHTS = [
 ];
 
 const defaultSettings = {
-  websiteName: "VASTRA AURA",
+  websiteName: "VATSAURA",
   logoData: "",
   tshirtCategories: DEFAULT_TSHIRT_CATEGORIES,
   latestDropProductIds: defaultProducts.slice(0, 4).map((product) => product.id),

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
-import { auth } from "./firebase";
+import { auth, db } from "./firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -39,17 +40,17 @@ const ADMIN_EMAILS = [
   .filter((value, index, array) => value && array.indexOf(value) === index);
 
 const STORAGE_KEYS = {
-  cart: "vastraAuraCart",
-  wishlist: "vastraAuraWishlist",
-  orders: "vastraAuraOrders",
-  users: "vastraAuraUsers",
-  products: "vastraAuraProducts",
-  settings: "vastraAuraSettings",
-  adminSession: "vastraAuraAdminSession"
+  cart: "vatsauraCart",
+  wishlist: "vatsauraWishlist",
+  orders: "vatsauraOrders",
+  users: "vatsauraUsers",
+  products: "vatsauraProducts",
+  settings: "vatsauraSettings",
+  adminSession: "vatsauraAdminSession"
 };
 
 const PERSISTENT_STORE_CONFIG = {
-  dbName: "vastraAuraStorefrontDb",
+  dbName: "vatsauraStorefrontDb",
   storeName: "appState",
   key: "primary"
 };
@@ -291,11 +292,11 @@ const COLLECTION_COPY = {
 const defaultProducts = [
   {
     id: "prd-tee-1",
-    name: "Krishna Aura Oversized Tee",
+    name: "Krishna Vatsaura Oversized Tee",
     department: "tshirts",
     category: "Krishna",
     price: 1699,
-    discount: 10,
+    discount: 0,
     stock: 18,
     badge: "Signature",
     description:
@@ -311,7 +312,7 @@ const defaultProducts = [
     department: "tshirts",
     category: "Mahadev",
     price: 1799,
-    discount: 12,
+    discount: 0,
     stock: 14,
     badge: "Dark Edit",
     description:
@@ -327,7 +328,7 @@ const defaultProducts = [
     department: "tshirts",
     category: "Hanuman",
     price: 1599,
-    discount: 5,
+    discount: 0,
     stock: 21,
     badge: "Power Fit",
     description:
@@ -343,7 +344,7 @@ const defaultProducts = [
     department: "tshirts",
     category: "Narsimha",
     price: 1899,
-    discount: 8,
+    discount: 0,
     stock: 12,
     badge: "Rare Drop",
     description:
@@ -359,7 +360,7 @@ const defaultProducts = [
     department: "tshirts",
     category: "Shree Ram",
     price: 1749,
-    discount: 6,
+    discount: 0,
     stock: 16,
     badge: "Royal Line",
     description:
@@ -400,7 +401,7 @@ const DEFAULT_HOME_HIGHLIGHTS = [
 ];
 
 const defaultSettings = {
-  websiteName: "VASTRA AURA",
+  websiteName: "VATSAURA",
   logoData: "",
   tshirtCategories: DEFAULT_TSHIRT_CATEGORIES,
   latestDropProductIds: defaultProducts.slice(0, 4).map((product) => product.id),
@@ -424,10 +425,7 @@ const defaultSettings = {
       aspectRatio: DEFAULT_BANNER_ASPECT_RATIO
     }
   ],
-  offers: [
-    { id: "offer-1", text: "Complimentary shipping on orders above Rs. 1,999" },
-    { id: "offer-2", text: "Early access energy on every premium monochrome drop" }
-  ],
+  offers: [],
   termsAndConditions: DEFAULT_TERMS_AND_CONDITIONS,
   privacyPolicy: DEFAULT_PRIVACY_POLICY
 };
@@ -1597,7 +1595,16 @@ export default function App() {
 
     const hydrateStore = async () => {
       try {
-        const snapshot = await readPersistentStore();
+        // Try reading from Firestore first for permanent cloud storage
+        const cloudDoc = await getDoc(doc(db, "appState", "primary"));
+        let snapshot = null;
+
+        if (cloudDoc.exists()) {
+          snapshot = cloudDoc.data();
+        } else {
+          // Fallback to local storage if cloud is empty
+          snapshot = await readPersistentStore();
+        }
 
         if (!active || !snapshot || typeof snapshot !== "object") {
           return;
@@ -1683,6 +1690,9 @@ export default function App() {
 
     const persistStore = async () => {
       try {
+        // Save to Firestore for permanent cloud storage
+        await setDoc(doc(db, "appState", "primary"), snapshot);
+
         if (!canUsePersistentStore()) {
           writeLegacyStoreSnapshot(snapshot);
           return;
@@ -1691,7 +1701,7 @@ export default function App() {
         await writePersistentStore(snapshot);
         clearLegacyStoreSnapshot();
       } catch (error) {
-        console.error(error);
+        console.error("Cloud Save Error:", error);
         writeLegacyStoreSnapshot(snapshot);
       }
     };
