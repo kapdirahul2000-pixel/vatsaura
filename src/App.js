@@ -99,9 +99,9 @@ const MAX_HOME_HIGHLIGHTS = 8;
 const HOME_BANNER_AUTOPLAY_MS = 5200;
 const DEFAULT_BANNER_ASPECT_RATIO = 16 / 9;
 const DEFAULT_BANNER_COPY = {
-  title: "",
-  subtitle: "",
-  description: ""
+  title: "Spiritual Streetwear",
+  subtitle: "Premium",
+  description: "Wear your beliefs. Live your aura."
 };
 
 const initialCheckoutForm = {
@@ -129,7 +129,6 @@ const emptyProductForm = {
   colors: "Black, White",
   sizes: "S, M, L, XL",
   badge: "Signature",
-  availability: "in_stock",
   imageData: "",
   mediaImages: [],
   videoData: ""
@@ -447,7 +446,7 @@ const readStorage = (key, fallback) => {
   try {
     const raw = window.localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
-  } catch (_error) {
+  } catch (error) {
     return fallback;
   }
 };
@@ -463,7 +462,7 @@ const writeStorage = (key, value) => {
 const readSessionValue = (key, fallback = "") => {
   try {
     return window.sessionStorage.getItem(key) || fallback;
-  } catch (_error) {
+  } catch (error) {
     return fallback;
   }
 };
@@ -612,7 +611,7 @@ const clearLegacyStoreSnapshot = () => {
 
 /** Pick highest `updatedAt` so local IndexedDB edits win over stale cloud reads. Tie-break favors richer payloads. */
 const snapshotFreshness = (snapshot) =>
-  (snapshot && typeof snapshot === "object") ? (Number(snapshot.updatedAt) || 0) : -1;
+  snapshot && typeof snapshot === "object" ? Number(snapshot.updatedAt) || 0 : -1;
 
 const snapshotRichness = (snapshot) => {
   if (!snapshot || typeof snapshot !== "object") {
@@ -1006,7 +1005,6 @@ const normalizeProduct = (product) => ({
   price: Number(product.price) || 0,
   discount: Number(product.discount) || 0,
   stock: Number(product.stock) || 0,
-  availability: product.availability || "in_stock",
   createdAt: product.createdAt || Date.now(),
   mediaImages: getProductImages(product),
   videoData: getProductVideo(product),
@@ -1139,77 +1137,6 @@ const startOfWeek = () => {
 const startOfMonth = () => {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-};
-
-const CLOUDINARY_CLOUD_NAME = "dcm5dhh8e";
-const CLOUDINARY_UPLOAD_PRESET = "ml_default";
-const CLOUDINARY_API_KEY = "791798747133272";
-
-const compressImage = (file, maxWidth = 1200, quality = 0.8) =>
-  new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        let width = img.width;
-        let height = img.height;
-
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-
-        canvas.toBlob(
-          (blob) => {
-            const compressedFile = new File([blob], file.name, {
-              type: "image/jpeg",
-              lastModified: Date.now()
-            });
-            resolve(compressedFile);
-          },
-          "image/jpeg",
-          quality
-        );
-      };
-    };
-  });
-
-const uploadToCloudinary = async (file) => {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-  formData.append("api_key", CLOUDINARY_API_KEY);
-
-  try {
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-      {
-        method: "POST",
-        body: formData
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Cloudinary Error:", errorData);
-      throw new Error(errorData.error?.message || "Cloudinary upload failed");
-    }
-
-    const data = await response.json();
-    return data.secure_url;
-  } catch (error) {
-    console.error("Cloudinary Upload Error:", error);
-    throw error;
-  }
 };
 
 const fileToDataUrl = (file) =>
@@ -1540,7 +1467,7 @@ export default function App() {
     reason: "",
     targetUserEmail: ""
   });
-
+  const [razorpayLoading, setRazorpayLoading] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
     name: "",
@@ -1574,6 +1501,8 @@ export default function App() {
   const isAdminOwner = Boolean(userEmail) && ADMIN_EMAILS.includes(userEmail);
   const isAdmin = isAdminOwner && hasAdminAccess;
   const activeAdminEmail = isAdminOwner ? userEmail : frontendAdminEmail;
+  const configuredAdminAccountsLabel =
+    ADMIN_EMAILS.length > 0 ? ADMIN_EMAILS.join(", ") : "not configured";
   const currentUserRecord = useMemo(() => 
     users.find((entry) => entry.email?.toLowerCase() === userEmail),
     [users, userEmail]
@@ -1958,13 +1887,6 @@ export default function App() {
   }, [activePage, homepageBanners.length]);
 
   useEffect(() => {
-    if (homepageBanners.length > 1 && activeBannerIndex > homepageBanners.length) {
-      setBannerTransitionEnabled(false);
-      setActiveBannerIndex(0);
-    }
-  }, [activeBannerIndex, homepageBanners.length]);
-
-  useEffect(() => {
     if (
       selectedCategory !== "all" &&
       !managedTshirtCategories.includes(selectedCategory)
@@ -2258,10 +2180,10 @@ export default function App() {
     const nextValue = event.target.value;
     const normalizedValue = nextValue.trim().toLowerCase();
     const shouldIgnoreInjectedEmail =
-      ((!user || !hasAdminAccess) &&
+      (!user || !hasAdminAccess) &&
       Boolean(normalizedValue) &&
       (normalizedValue === lastAuthenticatedEmailRef.current ||
-        ADMIN_EMAILS.includes(normalizedValue)));
+        ADMIN_EMAILS.includes(normalizedValue));
 
     if (shouldIgnoreInjectedEmail) {
       event.target.value = "";
@@ -2847,6 +2769,7 @@ export default function App() {
   };
 
   const handleRazorpayPayment = async (amountToPay, onPaymentSuccess) => {
+    setRazorpayLoading(true);
     try {
       // 1. Create order on backend
       const response = await fetch(`${process.env.REACT_APP_API_BASE_URL || "http://localhost:4000"}/api/payment/create-order`, {
@@ -2887,6 +2810,7 @@ export default function App() {
         },
         modal: {
           ondismiss: function () {
+            setRazorpayLoading(false);
           }
         }
       };
@@ -2894,11 +2818,13 @@ export default function App() {
       const rzp = new window.Razorpay(options);
       rzp.on("payment.failed", function (response) {
         setToast(`Payment failed: ${response.error.description}`);
+        setRazorpayLoading(false);
       });
       rzp.open();
     } catch (error) {
       console.error("Razorpay Error:", error);
       setToast(error.message || "Unable to start Razorpay payment.");
+      setRazorpayLoading(false);
     }
   };
 
@@ -2953,12 +2879,13 @@ export default function App() {
   };
 
   const toggleWishlist = (productId) => {
-    setWishlist((prev) =>
-      prev.includes(productId)
-        ? prev.filter((entry) => entry !== productId)
-        : [productId, ...prev]
-    );
-  };
+    setWishlist((prev) => {
+  if (prev.includes(productId)) {
+    return prev.filter((entry) => entry !== productId);
+  } else {
+    return [productId, ...prev];
+  }
+});
 
   const addConfiguredProductToCart = (product = selectedProduct, config = productConfig) => {
     if (!product || !config) {
@@ -3029,6 +2956,41 @@ export default function App() {
     navigateTo("payment");
   };
 
+  const updateCurrentUserRecord = (nextAuraPoints, totalSpent) => {
+    if (!user) {
+      return;
+    }
+
+    const email = String(user.email || "").toLowerCase();
+    setUsers((prev) =>
+      prev.map((entry) => {
+        if (entry.email?.toLowerCase() !== email) {
+          return entry;
+        }
+
+        const delta = nextAuraPoints - Number(entry.auraPoints || 0);
+        const now = Date.now();
+        const transaction = {
+          id: createId("tra"),
+          date: new Date(now).toLocaleDateString("en-IN"),
+          time: new Date(now).toLocaleTimeString("en-IN"),
+          amount: delta,
+          type: delta >= 0 ? "Deposit" : "Withdrawal",
+          adminName: "System",
+          reason: delta >= 0 ? "Cashback for order" : "Order payment"
+        };
+
+        return {
+          ...entry,
+          auraPoints: nextAuraPoints,
+          totalSpent: Number(entry.totalSpent || 0) + totalSpent,
+          totalOrders: Number(entry.totalOrders || 0) + 1,
+          auraHistory: [transaction, ...(entry.auraHistory || [])]
+        };
+      })
+    );
+  };
+
   const placeOrder = () => {
     if (cart.length === 0) {
       setToast("Your cart is empty.");
@@ -3040,7 +3002,7 @@ export default function App() {
       return;
     }
 
-    const auraUsed = (user && (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user))) ? Math.min(auraPoints, cartTotal) : 0;
+    const auraUsed = (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user)) && user ? Math.min(auraPoints, cartTotal) : 0;
     const remainingPayable = cartTotal - auraUsed;
     const isFullAuraPayment = auraUsed >= cartTotal && auraUsed > 0;
 
@@ -3098,7 +3060,7 @@ export default function App() {
 
   const finalizeOrder = (orderId, orderStatus, razorpayData = null) => {
     const now = Date.now();
-    const auraUsed = (user && (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user))) ? Math.min(auraPoints, cartTotal) : 0;
+    const auraUsed = (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user)) && user ? Math.min(auraPoints, cartTotal) : 0;
     const remainingPayable = cartTotal - auraUsed;
     const isFullAuraPayment = auraUsed >= cartTotal && auraUsed > 0;
 
@@ -3108,8 +3070,8 @@ export default function App() {
       dateLabel: new Date(now).toLocaleString("en-IN"),
       paymentMethod,
       status: orderStatus,
-      paymentSubmittedAt: ((paymentMethod === "upi" || paymentMethod === "razorpay") && !isFullAuraPayment) ? now : null,
-      paymentSubmittedLabel: ((paymentMethod === "upi" || paymentMethod === "razorpay") && !isFullAuraPayment) ? new Date(now).toLocaleString("en-IN") : null,
+      paymentSubmittedAt: (paymentMethod === "upi" || paymentMethod === "razorpay") && !isFullAuraPayment ? now : null,
+      paymentSubmittedLabel: (paymentMethod === "upi" || paymentMethod === "razorpay") && !isFullAuraPayment ? new Date(now).toLocaleString("en-IN") : null,
       items: cart,
       total: cartTotal,
       auraPointsUsed: auraUsed,
@@ -3179,6 +3141,7 @@ export default function App() {
     }
 
     setToast(`Order ${orderId} placed successfully.`);
+    setRazorpayLoading(false);
   };
 
   const setUserFormField = (field, value) => {
@@ -3501,7 +3464,6 @@ export default function App() {
       colors: product.colors.join(", "),
       sizes: product.sizes.join(", "),
       badge: product.badge || "",
-      availability: product.availability || "in_stock",
       imageData: getProductImages(product)[0] || "",
       mediaImages: getProductImages(product),
       videoData: getProductVideo(product)
@@ -3534,7 +3496,6 @@ export default function App() {
       colors: productForm.colors,
       sizes: productForm.sizes,
       badge: productForm.badge.trim(),
-      availability: productForm.availability,
       mediaImages: getProductImages(productForm),
       videoData: getProductVideo(productForm),
       imageData: getProductImages(productForm)[0] || "",
@@ -3625,6 +3586,11 @@ export default function App() {
   };
 
   const saveBanner = () => {
+    if (!bannerForm.title.trim()) {
+      setToast("Enter banner title.");
+      return;
+    }
+
     if (!String(bannerForm.mediaData || "").trim()) {
       setToast("Upload banner media.");
       return;
@@ -3964,15 +3930,7 @@ export default function App() {
     }
 
     try {
-      const uploads = await Promise.all(
-        files.map(async (file) => {
-          if (file.type.startsWith("image/")) {
-            const compressedFile = await compressImage(file);
-            return uploadToCloudinary(compressedFile);
-          }
-          return fileToDataUrl(file);
-        })
-      );
+      const uploads = await Promise.all(files.map((file) => fileToDataUrl(file)));
       await Promise.resolve(
         onDone(multiple ? uploads : uploads[0], multiple ? files : files[0])
       );
@@ -4397,7 +4355,8 @@ export default function App() {
               >
                 {managedHomeHighlights.map((highlight) => {
                   const HighlightIcon =
-                    HOME_HIGHLIGHT_ICON_COMPONENTS[highlight.iconKey] || QualitySealIcon;
+                    HOME_HIGHLIGHT_ICON_COMPONENTS[highlight.iconKey] || 
+                    QualitySealIcon;
 
                   return (
                     <article key={highlight.id} className="home-highlight-card">
@@ -4480,11 +4439,7 @@ export default function App() {
       { label: "Edition", value: selectedProduct.badge || "Signature Drop" },
       {
         label: "Availability",
-        value: selectedProduct.availability === "coming_soon"
-          ? "Coming Soon"
-          : selectedProduct.availability === "out_of_stock"
-          ? "Out of Stock"
-          : selectedProduct.stock > 0 ? `${selectedProduct.stock} ready to ship` : "Currently unavailable"
+        value: selectedProduct.stock > 0 ? `${selectedProduct.stock} ready to ship` : "Currently unavailable"
       },
       { label: "Fabric", value: "Premium heavyweight cotton" },
       { label: "Care", value: "Cold wash inside out and dry flat" },
@@ -4557,32 +4512,16 @@ export default function App() {
               </section>
 
               <div className="product-side__actions">
-                {selectedProduct.availability === "in_stock" ? (
-                  <button
-                    onClick={() => addConfiguredProductToCart()}
-                    className="button-primary product-side__cta"
-                    style={primaryButtonStyle}
-                  >
-                    Add to Cart
-                  </button>
-                ) : (
-                  <div
-                    style={{
-                      padding: "16px",
-                      borderRadius: "999px",
-                      background: tone.soft,
-                      border: `1px solid ${tone.line}`,
-                      textAlign: "center",
-                      color: tone.muted,
-                      fontWeight: 700,
-                      letterSpacing: "0.1em",
-                      textTransform: "uppercase",
-                      fontSize: "13px"
-                    }}
-                  >
-                    Coming Soon
-                  </div>
-                )}
+                <button
+                  onClick={() => addConfiguredProductToCart()}
+                  className="button-primary product-side__cta"
+                  style={primaryButtonStyle}
+                >
+                  Add to Cart
+                </button>
+                <p className="product-side__note">
+                  Clean monochrome finish, oversized drape, and a gallery-style media flow built for close inspection.
+                </p>
               </div>
             </div>
           </section>
@@ -4690,15 +4629,13 @@ export default function App() {
               </div>
 
               <div className="product-side__actions product-side__actions--secondary">
-                {selectedProduct.availability === "in_stock" && (
-                  <button
-                    onClick={addAndGoToCart}
-                    className="button-secondary product-side__cta product-side__cta--secondary"
-                    style={buyNowButtonStyle}
-                  >
-                    Buy Now
-                  </button>
-                )}
+                <button
+                  onClick={addAndGoToCart}
+                  className="button-secondary product-side__cta product-side__cta--secondary"
+                  style={buyNowButtonStyle}
+                >
+                  Buy Now
+                </button>
                 <button
                   onClick={() => toggleWishlist(selectedProduct.id)}
                   className="product-side__text-button"
@@ -5147,7 +5084,7 @@ export default function App() {
                 padding: "18px",
                 textTransform: "uppercase",
                 letterSpacing: "2px",
-                opacity: ((paymentMethod === "upi" && !isFullAuraPayment && ((!checkoutForm.transactionId?.trim() || !checkoutForm.customerName?.trim())))) ? 0.5 : 1
+                opacity: (paymentMethod === "upi" && !isFullAuraPayment && (!checkoutForm.transactionId?.trim() || !checkoutForm.customerName?.trim())) ? 0.5 : 1
               }}
             >
               {isFullAuraPayment ? "Confirm with Aura Points" : "Place Order"}
@@ -6193,14 +6130,6 @@ export default function App() {
                         </option>
                       ))}
                     </select>
-                    <div style={{ display: "grid", gap: "8px" }}>
-                      <label style={{ fontSize: "12px", color: tone.muted, letterSpacing: "1px", textTransform: "uppercase" }}>Product Availability</label>
-                      <select value={productForm.availability} onChange={(event) => setProductFormField("availability", event.target.value)} style={selectStyle}>
-                        <option value="in_stock">In Stock</option>
-                        <option value="out_of_stock">Out of Stock</option>
-                        <option value="coming_soon">Coming Soon</option>
-                      </select>
-                    </div>
                     <textarea value={productForm.description} onChange={(event) => setProductFormField("description", event.target.value)} placeholder="Description" style={textareaStyle} />
                     <input value={productForm.colors} onChange={(event) => setProductFormField("colors", event.target.value)} placeholder="Colours: Black, White" style={inputStyle} />
                     <input value={productForm.sizes} onChange={(event) => setProductFormField("sizes", event.target.value)} placeholder="Sizes: S, M, L, XL" style={inputStyle} />
@@ -6497,7 +6426,7 @@ export default function App() {
                           <div>
                             <h3 style={{ margin: "0 0 4px" }}>{product.name}</h3>
                             <p style={{ margin: 0, color: tone.muted }}>
-                              {product.department} | {product.category} | {product.availability?.replace("_", " ") || "in stock"}
+                              {product.department} | {product.category}
                             </p>
                             <p style={{ margin: "6px 0 0" }}>
                               {formatCurrency(discountPrice(product))} | Stock {product.stock}
