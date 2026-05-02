@@ -1145,6 +1145,44 @@ const CLOUDINARY_CLOUD_NAME = "dcm5dhh8e";
 const CLOUDINARY_UPLOAD_PRESET = "ml_default";
 const CLOUDINARY_API_KEY = "791798747133272";
 
+const compressImage = (file, maxWidth = 1200, quality = 0.8) =>
+  new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            const compressedFile = new File([blob], file.name, {
+              type: "image/jpeg",
+              lastModified: Date.now()
+            });
+            resolve(compressedFile);
+          },
+          "image/jpeg",
+          quality
+        );
+      };
+    };
+  });
+
 const uploadToCloudinary = async (file) => {
   const formData = new FormData();
   formData.append("file", file);
@@ -1920,6 +1958,13 @@ export default function App() {
 
     return () => window.clearInterval(timer);
   }, [activePage, homepageBanners.length]);
+
+  useEffect(() => {
+    if (homepageBanners.length > 1 && activeBannerIndex > homepageBanners.length) {
+      setBannerTransitionEnabled(false);
+      setActiveBannerIndex(0);
+    }
+  }, [activeBannerIndex, homepageBanners.length]);
 
   useEffect(() => {
     if (
@@ -3962,9 +4007,10 @@ export default function App() {
 
     try {
       const uploads = await Promise.all(
-        files.map((file) => {
+        files.map(async (file) => {
           if (file.type.startsWith("image/")) {
-            return uploadToCloudinary(file);
+            const compressedFile = await compressImage(file);
+            return uploadToCloudinary(compressedFile);
           }
           return fileToDataUrl(file);
         })
