@@ -46,9 +46,7 @@ const STORAGE_KEYS = {
   users: "vatsauraUsers",
   products: "vatsauraProducts",
   settings: "vatsauraSettings",
-  adminSession: "vatsauraAdminSession",
-  /** Full `appState/primary` JSON backup when Firestore write fails */
-  firestoreBackup: "vatsauraAppStatePrimaryBackup"
+  adminSession: "vatsauraAdminSession"
 };
 
 const PERSISTENT_STORE_CONFIG = {
@@ -101,9 +99,9 @@ const MAX_HOME_HIGHLIGHTS = 8;
 const HOME_BANNER_AUTOPLAY_MS = 5200;
 const DEFAULT_BANNER_ASPECT_RATIO = 16 / 9;
 const DEFAULT_BANNER_COPY = {
-  title: "Spiritual Streetwear",
-  subtitle: "Premium",
-  description: "Wear your beliefs. Live your aura."
+  title: "",
+  subtitle: "",
+  description: ""
 };
 
 const initialCheckoutForm = {
@@ -611,152 +609,49 @@ const clearLegacyStoreSnapshot = () => {
   }
 };
 
+/** Pick highest `updatedAt` so local IndexedDB edits win over stale cloud reads. Tie-break favors richer payloads. */
 const snapshotFreshness = (snapshot) =>
   snapshot && typeof snapshot === "object" ? Number(snapshot.updatedAt) || 0 : -1;
 
-/** Payload written to Firestore `appState/primary` (also mirrored in IndexedDB). */
-const buildFirestorePrimaryDocument = (orders, products, users, settings) => {
-  const safeSettings = settings && typeof settings === "object" ? settings : {};
+const snapshotRichness = (snapshot) => {
+  if (!snapshot || typeof snapshot !== "object") {
+    return 0;
+  }
 
-  return {
-    version: 1,
-    updatedAt: Date.now(),
-    products: Array.isArray(products) ? products : [],
-    banners: Array.isArray(safeSettings.banners) ? safeSettings.banners : [],
-    categories: Array.isArray(safeSettings.tshirtCategories)
-      ? safeSettings.tshirtCategories
-      : [],
-    settings: safeSettings,
-    users: Array.isArray(users) ? users : [],
-    orders: Array.isArray(orders) ? orders : []
-  };
+  let score = 0;
+
+  if (snapshot.settings && typeof snapshot.settings === "object") {
+    score += 10;
+  }
+
+  score += Number(Array.isArray(snapshot.products) ? snapshot.products.length : 0);
+  score += Number(Array.isArray(snapshot.users) ? snapshot.users.length : 0);
+  score += Number(Array.isArray(snapshot.orders) ? snapshot.orders.length : 0);
+
+  return score;
 };
 
-/** Merge Firestore top-level `banners` / `categories` into `settings` for app state. */
-const expandFirestorePrimaryDocument = (raw) => {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
+const pickFreshAppSnapshot = (...candidates) => {
+  let best = null;
+  let bestTime = -Infinity;
+  let bestScore = -Infinity;
 
-  const settingsBase =
-    raw.settings && typeof raw.settings === "object" ? { ...raw.settings } : {};
-
-  if (Array.isArray(raw.banners)) {
-    settingsBase.banners = raw.banners;
-  }
-
-  if (Array.isArray(raw.categories)) {
-    settingsBase.tshirtCategories = raw.categories;
-  }
-
-  return {
-    version: raw.version,
-    updatedAt: raw.updatedAt,
-    products: raw.products,
-    users: raw.users,
-    orders: raw.orders,
-    settings: settingsBase
-  };
-};
-
-/** Recursively remove undefined values to prevent Firestore serialization errors. */
-const cleanForFirestore = (obj) => {
-  if (Array.isArray(obj)) {
-    return obj.map(v => cleanForFirestore(v));
-  } else if (obj !== null && typeof obj === "object") {
-    return Object.fromEntries(
-      Object.entries(obj)
-        .filter(([_, v]) => v !== undefined)
-        .map(([k, v]) => [k, cleanForFirestore(v)])
-    );
-  }
-  return obj;
-};
-
-const persistAppStateToLayers = async (
-  orders,
-  products,
-  users,
-  settings,
-  { reason = "change", isHydrated = true } = {}
-) => {
-  // 1. Path & Config
-  const collectionPath = "appState";
-  const documentId = "primary";
-
-  // 2. Build and Sanitize Payload
-  const rawPayload = buildFirestorePrimaryDocument(orders, products, users, settings);
-  const payload = cleanForFirestore(rawPayload);
-
-  // 3. Data Integrity & Sync Guard
-  // CRITICAL: We only save to Firestore if:
-  // a) The store is hydrated (so we don't save before loading)
-  // b) We have meaningful data (so we don't wipe Firestore with empty defaults)
-  // c) OR it's an explicit user-triggered change (reason !== 'debounced-state-sync')
-  
-  const hasRealData = 
-    (payload.products && payload.products.length > 0) || 
-    (payload.settings && Object.keys(payload.settings).length > 5);
-
-  if (!isHydrated) {
-    console.warn("[Firestore] Sync blocked: Store not yet hydrated.");
-    return;
-  }
-
-  if (reason === "debounced-state-sync" && !hasRealData) {
-    console.info("[Firestore] Auto-sync skipped: No meaningful data to persist yet.");
-    return;
-  }
-
-  console.group(`[Firestore] Syncing Data... (${reason})`);
-  console.info(`Document: ${collectionPath}/${documentId}`);
-  console.info(`Stats: ${payload.products?.length || 0} products, ${payload.banners?.length || 0} banners`);
-
-  // 4. Primary Persistence: Firestore
-  try {
-    if (!db) throw new Error("Firestore instance (db) is missing.");
-
-    const docRef = doc(db, collectionPath, documentId);
-    
-    // Attempt write with 10s timeout
-    const savePromise = setDoc(docRef, payload);
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("Firestore write timed out")), 10000)
-    );
-
-    await Promise.race([savePromise, timeoutPromise]);
-    
-    console.info(`[Firestore] ✅ SUCCESS: Cloud state updated.`);
-    window.localStorage.removeItem(STORAGE_KEYS.firestoreBackup);
-  } catch (error) {
-    console.error(`[Firestore] ❌ SYNC ERROR:`, error.message);
-    
-    if (error.message?.includes("Permission denied") || error.code === "permission-denied") {
-      console.warn("[Firestore] 403 Forbidden: Your security rules are blocking this write. Ensure you are logged in as an admin.");
-    } else if (error.message?.includes("timed out")) {
-      console.warn("[Firestore] Network timeout: This is often caused by firewall/proxy blocking Google domains.");
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") {
+      continue;
     }
 
-    // Recovery Fallback
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.firestoreBackup, JSON.stringify(payload));
-    } catch (lsError) {
-      console.error("[Firestore] Backup failed:", lsError);
-    }
-  }
-  console.groupEnd();
+    const time = snapshotFreshness(candidate);
+    const score = snapshotRichness(candidate);
 
-  // 5. Secondary Persistence: Local Cache
-  try {
-    if (canUsePersistentStore()) {
-      await writePersistentStore(payload);
-      clearLegacyStoreSnapshot();
-    } else {
-      writeLegacyStoreSnapshot({ orders, products, users, settings });
+    if (time > bestTime || (time === bestTime && score > bestScore)) {
+      best = candidate;
+      bestTime = time;
+      bestScore = score;
     }
-  } catch (localError) {
-    console.warn("[LocalCache] Sync warning:", localError);
   }
+
+  return best;
 };
 
 const buildLegacyBrowserSnapshot = () => {
@@ -971,21 +866,13 @@ const createInitialSettings = () =>
 
 const normalizeProductsState = (
   storedProducts,
-  initialSettings = defaultSettings,
-  { allowEmptyCatalog = false } = {}
+  initialSettings = defaultSettings
 ) => {
   const categories = sanitizeTshirtCategories(initialSettings.tshirtCategories);
-  let safeProducts;
-
-  if (Array.isArray(storedProducts)) {
-    if (storedProducts.length > 0 || allowEmptyCatalog) {
-      safeProducts = storedProducts;
-    } else {
-      safeProducts = defaultProducts;
-    }
-  } else {
-    safeProducts = defaultProducts;
-  }
+  const safeProducts =
+    Array.isArray(storedProducts) && storedProducts.length > 0
+      ? storedProducts
+      : defaultProducts;
 
   const normalizedProducts = safeProducts
     .map(normalizeProduct)
@@ -1003,12 +890,8 @@ const normalizeProductsState = (
       };
     });
 
-  if (normalizedProducts.length > 0) {
-    return normalizedProducts;
-  }
-
-  return allowEmptyCatalog
-    ? []
+  return normalizedProducts.length > 0
+    ? normalizedProducts
     : defaultProducts.map((product, index) => {
         const normalizedProduct = normalizeProduct(product);
         const normalizedCategory = normalizeCategoryName(normalizedProduct.category);
@@ -1476,6 +1359,24 @@ const secondaryButtonStyle = {
   fontWeight: 700
 };
 
+const buyNowButtonStyle = {
+  border: "none",
+  background: tone.black,
+  color: tone.white,
+  padding: "16px 32px",
+  borderRadius: "999px",
+  cursor: "pointer",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: "0.18em",
+  fontSize: "13px",
+  boxShadow: "0 8px 24px rgba(0, 0, 0, 0.12)",
+  width: "100%",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center"
+};
+
 const shellStyle = {
   maxWidth: "1240px",
   margin: "0 auto",
@@ -1574,7 +1475,6 @@ export default function App() {
     gender: "",
     birthdate: ""
   });
-  const [isUploading, setIsUploading] = useState(false);
 
   const [cart, setCart] = useState(() => readStorage(STORAGE_KEYS.cart, []));
   const [wishlist, setWishlist] = useState(() =>
@@ -1596,14 +1496,6 @@ export default function App() {
   const bannerResetTimerRef = useRef(null);
   const persistentSaveTimerRef = useRef(null);
   const lastAuthenticatedEmailRef = useRef("");
-  const appPersistStateRef = useRef({
-    orders: [],
-    products: [],
-    users: [],
-    settings: {}
-  });
-
-  appPersistStateRef.current = { orders, products, users, settings };
 
   const userEmail = String(user?.email || "").toLowerCase();
   const isAdminOwner = Boolean(userEmail) && ADMIN_EMAILS.includes(userEmail);
@@ -1807,130 +1699,86 @@ export default function App() {
     let active = true;
 
     const hydrateStore = async () => {
-      let resolvedRaw = null;
-      let hydrateSource = "initial";
+      let cloudSnapshot = null;
 
-      console.info("[appState/primary] Starting hydration...");
-      
-      // 0. Connection Test
       try {
-        console.info("[Firestore] Verifying connection config...");
-        if (!process.env.REACT_APP_FIREBASE_PROJECT_ID) {
-          throw new Error("REACT_APP_FIREBASE_PROJECT_ID is missing in .env");
-        }
-      } catch (e) {
-        console.error("[Firestore] Connection test failed:", e.message);
-      }
-
-      // 1. Primary Source: Firestore
-      try {
-        const docRef = doc(db, "appState", "primary");
-        const cloudDoc = await getDoc(docRef);
+        const cloudDoc = await getDoc(doc(db, "appState", "primary"));
 
         if (cloudDoc.exists()) {
           const data = cloudDoc.data();
-          if (data && typeof data === "object" && (data.products || data.settings || data.banners)) {
-            resolvedRaw = data;
-            hydrateSource = "firestore";
-            console.info("[appState/primary] Hydrated from Firestore");
-          } else {
-            console.info("[appState/primary] Firestore document exists but appears empty or invalid");
+
+          if (data && typeof data === "object") {
+            cloudSnapshot = data;
           }
-        } else {
-          console.info("[appState/primary] Firestore document does not exist yet");
         }
       } catch (error) {
-        console.error("[appState/primary] Firestore hydration failed:", error);
+        console.warn("Firestore load skipped; falling back to local copies.", error);
       }
 
-      // 2. Secondary Source: IndexedDB (Local Cache)
-      if (!resolvedRaw) {
-        try {
-          const idb = await readPersistentStore();
-          if (idb && typeof idb === "object" && (idb.products || idb.settings)) {
-            resolvedRaw = idb;
-            hydrateSource = "indexeddb";
-            console.info("[appState/primary] Hydrated from IndexedDB");
-          }
-        } catch (error) {
-          console.warn("[appState/primary] IndexedDB hydration failed:", error);
-        }
-      }
+      let idbSnapshot = null;
 
-      // 3. Tertiary Source: LocalStorage Full Backup
-      if (!resolvedRaw) {
-        try {
-          const backupRaw = window.localStorage.getItem(STORAGE_KEYS.firestoreBackup);
-          if (backupRaw) {
-            const parsed = JSON.parse(backupRaw);
-            if (parsed && typeof parsed === "object") {
-              resolvedRaw = parsed;
-              hydrateSource = "localstorage_backup";
-              console.info("[appState/primary] Hydrated from LocalStorage backup");
-            }
-          }
-        } catch (error) {
-          console.warn("[appState/primary] LocalStorage backup hydration failed:", error);
-        }
-      }
-
-      // 4. Quaternary Source: Legacy Split Keys
-      if (!resolvedRaw) {
-        const legacySnapshot = buildLegacyBrowserSnapshot();
-        if (legacySnapshot && (legacySnapshot.products?.length > 0 || legacySnapshot.settings)) {
-          resolvedRaw = legacySnapshot;
-          hydrateSource = "legacy_keys";
-          console.info("[appState/primary] Hydrated from legacy LocalStorage keys");
-        }
-      }
-
-      // Apply the hydrated state
       try {
-        if (!active) return;
+        idbSnapshot = await readPersistentStore();
 
-        if (!resolvedRaw) {
-          console.info("[appState/primary] No existing state found in any layer; using defaults");
-          setStoreHydrated(true);
+        if (idbSnapshot !== null && typeof idbSnapshot !== "object") {
+          idbSnapshot = null;
+        }
+      } catch (error) {
+        console.warn("IndexedDB load skipped.", error);
+      }
+
+      const legacySnapshot = buildLegacyBrowserSnapshot();
+
+      try {
+        if (!active) {
           return;
         }
 
-        const snapshot = hydrateSource !== "legacy_keys"
-          ? expandFirestorePrimaryDocument(resolvedRaw)
-          : resolvedRaw;
+        const snapshot = pickFreshAppSnapshot(
+          cloudSnapshot,
+          idbSnapshot,
+          legacySnapshot
+        );
 
-        if (snapshot) {
-          // Only update states if they are present in the snapshot to avoid clearing defaults with empty data
-          startTransition(() => {
-            if (snapshot.settings && Object.keys(snapshot.settings).length > 0) {
-              setSettings(normalizeSettingsState(snapshot.settings));
-            }
-            
-            if (Array.isArray(snapshot.products) && snapshot.products.length > 0) {
-              setProducts(normalizeProductsState(snapshot.products, normalizeSettingsState(snapshot.settings), { 
-                allowEmptyCatalog: true 
-              }));
-            }
-            
-            if (Array.isArray(snapshot.users) && snapshot.users.length > 0) {
-              setUsers(mergeAdminUsers(snapshot.users));
-            }
-            
-            if (Array.isArray(snapshot.orders) && snapshot.orders.length > 0) {
-              setOrders(snapshot.orders);
-            }
-          });
-          
-          // Clean up legacy keys if we found a more modern source
-          if (hydrateSource !== "legacy_keys") {
-            clearLegacyStoreSnapshot();
-          }
+        if (!snapshot || typeof snapshot !== "object") {
+          return;
+        }
+
+        const fallbackSettings = normalizeSettingsState(
+          readStorage(STORAGE_KEYS.settings, defaultSettings)
+        );
+        const fallbackProducts = readStorage(STORAGE_KEYS.products, defaultProducts);
+        const fallbackUsers = readStorage(STORAGE_KEYS.users, []);
+        const fallbackOrders = readStorage(STORAGE_KEYS.orders, []);
+
+        const nextSettings = normalizeSettingsState(
+          snapshot.settings !== undefined ? snapshot.settings : fallbackSettings
+        );
+
+        const productSeed =
+          snapshot.products !== undefined ? snapshot.products : fallbackProducts;
+        const userSeed =
+          snapshot.users !== undefined ? snapshot.users : fallbackUsers;
+        const orderSeedRaw =
+          snapshot.orders !== undefined ? snapshot.orders : fallbackOrders;
+        const orderSeed = Array.isArray(orderSeedRaw) ? orderSeedRaw : [];
+
+        startTransition(() => {
+          setSettings(nextSettings);
+          setProducts(normalizeProductsState(productSeed, nextSettings));
+          setUsers(mergeAdminUsers(userSeed));
+
+          setOrders(orderSeed);
+        });
+
+        if (snapshotFreshness(snapshot) > 0) {
+          clearLegacyStoreSnapshot();
         }
       } catch (error) {
-        console.error("[appState/primary] Application state application failed:", error);
+        console.error(error);
       } finally {
         if (active) {
           setStoreHydrated(true);
-          console.info("[appState/primary] Hydration complete, sync enabled");
         }
       }
     };
@@ -1955,17 +1803,44 @@ export default function App() {
       return undefined;
     }
 
+    const snapshot = {
+      version: 1,
+      updatedAt: Date.now(),
+      orders,
+      products,
+      users,
+      settings
+    };
+
+    const persistStore = async () => {
+      try {
+        // Local persistence first so a refresh sees the newest state even if Cloud is slow or offline.
+        if (!canUsePersistentStore()) {
+          writeLegacyStoreSnapshot(snapshot);
+        } else {
+          await writePersistentStore(snapshot);
+          clearLegacyStoreSnapshot();
+        }
+      } catch (error) {
+        console.error("Local storefront save failed; using legacy storage fallback.", error);
+        writeLegacyStoreSnapshot(snapshot);
+      }
+
+      try {
+        await setDoc(doc(db, "appState", "primary"), snapshot);
+      } catch (error) {
+        console.warn("Cloud storefront save queued or failed:", error?.message || error);
+      }
+    };
+
     if (persistentSaveTimerRef.current) {
       window.clearTimeout(persistentSaveTimerRef.current);
     }
 
     persistentSaveTimerRef.current = window.setTimeout(() => {
+      persistStore();
       persistentSaveTimerRef.current = null;
-      void persistAppStateToLayers(orders, products, users, settings, {
-        reason: "debounced-state-sync",
-        isHydrated: storeHydrated
-      });
-    }, 120);
+    }, 380);
 
     return () => {
       if (persistentSaveTimerRef.current) {
@@ -1974,32 +1849,6 @@ export default function App() {
       }
     };
   }, [storeHydrated, orders, products, users, settings]);
-
-  useEffect(() => {
-    if (!storeHydrated) {
-      return undefined;
-    }
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState !== "hidden") {
-        return;
-      }
-
-      const snapshot = appPersistStateRef.current;
-
-      void persistAppStateToLayers(
-        snapshot.orders,
-        snapshot.products,
-        snapshot.users,
-        snapshot.settings,
-        { reason: "tab-hidden-flush", isHydrated: storeHydrated }
-      );
-    };
-
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [storeHydrated]);
 
   useEffect(() => {
     writeSessionValue(STORAGE_KEYS.adminSession, adminSessionToken);
@@ -2522,14 +2371,7 @@ export default function App() {
 
       setAdminChallengeId(response.challengeId);
       setAdminAuthStep("setupVerifyOtp");
-      if (response.smtpDeliveryNote) {
-        setAdminSecurityError(response.smtpDeliveryNote);
-        setToast(
-          "Email delivery failed—the OTP was written to the backend console and otp log file. Follow the SMTP instructions below."
-        );
-      } else {
-        setToast(`OTP sent to ${response.contact}.`);
-      }
+      setToast(`OTP sent to ${response.contact}.`);
     } catch (error) {
       setAdminSecurityError(error.message || "Unable to send setup OTP.");
     } finally {
@@ -2662,14 +2504,7 @@ export default function App() {
       });
 
       setAdminAuthStep("loginOtp");
-      if (response.smtpDeliveryNote) {
-        setAdminSecurityError(response.smtpDeliveryNote);
-        setToast(
-          "Email delivery failed—the OTP was written to the backend console and otp log file. Follow the SMTP instructions below."
-        );
-      } else {
-        setToast(`OTP sent to ${response.contact}.`);
-      }
+      setToast(`OTP sent to ${response.contact}.`);
     } catch (error) {
       setAdminSecurityError(error.message || "Unable to send admin OTP.");
     } finally {
@@ -3750,11 +3585,6 @@ export default function App() {
   };
 
   const saveBanner = () => {
-    if (!bannerForm.title.trim()) {
-      setToast("Enter banner title.");
-      return;
-    }
-
     if (!String(bannerForm.mediaData || "").trim()) {
       setToast("Upload banner media.");
       return;
@@ -4071,42 +3901,6 @@ export default function App() {
     }));
   };
 
-  /** Uploads a file to Cloudinary and returns the secure_url. */
-  const uploadToCloudinary = async (file) => {
-    const CLOUD_NAME = "dcm5dhh8e";
-    const UPLOAD_PRESET = "ml_default";
-
-    if (!file) return null;
-
-    console.info(`[Cloudinary] Starting upload for: ${file.name}`);
-    
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("upload_preset", UPLOAD_PRESET);
-
-    try {
-      const response = await fetch(
-        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
-        {
-          method: "POST",
-          body: formData
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error?.message || "Cloudinary upload failed");
-      }
-
-      console.info(`[Cloudinary] Upload success: ${data.secure_url}`);
-      return data.secure_url;
-    } catch (error) {
-      console.error("[Cloudinary] Upload error:", error);
-      throw error;
-    }
-  };
-
   const handleImageUpload = async (event, onDone, options = {}) => {
     const {
       multiple = false,
@@ -4129,11 +3923,8 @@ export default function App() {
       return;
     }
 
-    setIsUploading(true);
     try {
-      // Switch from local data URLs to Cloudinary secure URLs
-      const uploads = await Promise.all(files.map((file) => uploadToCloudinary(file)));
-      
+      const uploads = await Promise.all(files.map((file) => fileToDataUrl(file)));
       await Promise.resolve(
         onDone(multiple ? uploads : uploads[0], multiple ? files : files[0])
       );
@@ -4142,7 +3933,6 @@ export default function App() {
       console.error(error);
       setToast(failureMessage);
     } finally {
-      setIsUploading(false);
       event.target.value = "";
     }
   };
@@ -4188,7 +3978,13 @@ export default function App() {
         style={style}
       />
     ) : (
-      <img src={brandMediaSource} alt={siteName} className={className} style={style} />
+      <img
+        src={brandMediaSource}
+        alt={siteName}
+        className={className}
+        style={style}
+        decoding="async"
+      />
     );
 
   const getPrimaryProductMedia = (product) => {
@@ -4295,6 +4091,8 @@ export default function App() {
               <img
                 src={primaryMedia.src}
                 alt={product.name}
+                loading="lazy"
+                decoding="async"
                 className="product-card__image"
                 style={{
                   filter: "none"
@@ -4307,6 +4105,7 @@ export default function App() {
                 loop
                 muted
                 playsInline
+                preload="metadata"
                 className="product-card__image"
                 style={{
                   filter: "none"
@@ -4430,6 +4229,7 @@ export default function App() {
       <section className="hero-media-banner hero-media-banner--carousel js-reveal">
         <div
           className="hero-media-banner__viewport"
+          style={{ aspectRatio: `${activeHomepageBannerAspectRatio}` }}
         >
           <div
             className="hero-media-banner__track"
@@ -4464,6 +4264,9 @@ export default function App() {
                       src={bannerMediaSource}
                       alt={banner.title || `${siteName} banner ${index + 1}`}
                       className="hero-media-banner__asset"
+                      decoding="async"
+                      loading={index === 0 ? "eager" : "lazy"}
+                      fetchPriority={index === 0 ? "high" : "auto"}
                     />
                   )}
                   <div className="hero-media-banner__overlay">
@@ -4572,9 +4375,6 @@ export default function App() {
                 <div>
                   <p className="latest-drops-panel__eyebrow">Curated Fresh</p>
                   <h2 style={{ margin: "0 0 8px" }}>Latest Drops</h2>
-                  <p style={{ margin: 0, color: tone.muted }}>
-                    Customize your homepage products and control the order of this section anytime.
-                  </p>
                 </div>
                 <div style={{ minWidth: "220px" }}>
                   <select
@@ -4712,9 +4512,6 @@ export default function App() {
                 >
                   Add to Cart
                 </button>
-                <p className="product-side__note">
-                  Clean monochrome finish, oversized drape, and a gallery-style media flow built for close inspection.
-                </p>
               </div>
             </div>
           </section>
@@ -4825,7 +4622,7 @@ export default function App() {
                 <button
                   onClick={addAndGoToCart}
                   className="button-secondary product-side__cta product-side__cta--secondary"
-                  style={secondaryButtonStyle}
+                  style={buyNowButtonStyle}
                 >
                   Buy Now
                 </button>
@@ -6507,6 +6304,7 @@ export default function App() {
                                 src={productFormVideo}
                                 controls
                                 playsInline
+                                preload="metadata"
                                 style={{
                                   width: "100%",
                                   height: "100%",
@@ -6948,6 +6746,7 @@ export default function App() {
                             loop
                             muted
                             playsInline
+                            preload="metadata"
                             controls={Boolean(bannerForm.mediaData)}
                             style={{
                               width: "100%",
@@ -7151,6 +6950,7 @@ export default function App() {
                                   loop
                                   muted
                                   playsInline
+                                  preload="metadata"
                                   style={{
                                     width: "100%",
                                     height: "100%",
@@ -7161,6 +6961,7 @@ export default function App() {
                                 <img
                                   src={getBannerMediaSource(banner)}
                                   alt={banner.title}
+                                  decoding="async"
                                   style={{
                                     width: "100%",
                                     height: "100%",
@@ -7333,6 +7134,7 @@ export default function App() {
                                     loop
                                     muted
                                     playsInline
+                                    preload="metadata"
                                     style={{
                                       width: "100%",
                                       height: "100%",
@@ -8236,37 +8038,6 @@ export default function App() {
           </button>
         </div>
       </nav>
-
-      {isUploading && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            background: "rgba(0, 0, 0, 0.4)",
-            display: "grid",
-            placeItems: "center",
-            zIndex: 99999
-          }}
-        >
-          <div
-            style={{
-              background: tone.white,
-              padding: "24px 32px",
-              borderRadius: "24px",
-              display: "grid",
-              gap: "12px",
-              placeItems: "center",
-              boxShadow: "0 10px 40px rgba(0,0,0,0.15)"
-            }}
-          >
-            <div className="spinner" style={{ width: "32px", height: "32px", border: `3px solid ${tone.line}`, borderTopColor: tone.black, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-            <p style={{ margin: 0, fontWeight: 700 }}>Uploading Media...</p>
-          </div>
-        </div>
-      )}
 
       {toast && (
         <div

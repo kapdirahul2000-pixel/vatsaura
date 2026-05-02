@@ -1,6 +1,11 @@
 .app-shell {
   position: relative;
   overflow-x: hidden;
+  /* HD Font Rendering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-smooth: always;
 }
 
 .app-shell::before,
@@ -477,10 +482,6 @@
   background: transparent;
 }
 
-.home-shell {
-  padding-top: 0.55rem !important;
-}
-
 .hero-media-banner__viewport {
   position: relative;
   width: 100%;
@@ -515,9 +516,9 @@
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
-  padding: 0 10%;
-  background: linear-gradient(90deg, rgba(5, 5, 5, 0.75) 0%, rgba(5, 5, 5, 0) 60%);
+  align-items: flex-end; /* Move content to the bottom */
+  padding: 4.5rem 6%; /* Adjust padding for bottom-left alignment */
+  background: linear-gradient(0deg, rgba(5, 5, 5, 0.8) 0%, rgba(5, 5, 5, 0) 50%); /* Adjust gradient for bottom focus */
   z-index: 10;
 }
 
@@ -574,6 +575,10 @@
   background: rgba(255, 255, 255, 0.9);
 }
 
+.home-shell {
+  padding-top: 0.55rem !important;
+}
+
 .hero-media-banner__controls {
   position: absolute;
   bottom: 2.5rem;
@@ -582,6 +587,7 @@
   display: flex; 
   gap: 0.75rem;
   z-index: 20;
+  min-height: 12px; /* Prevent height collapse */
 }
 
 .hero-media-banner__dot {
@@ -947,9 +953,9 @@
 .product-card__media-shell {
   position: relative;
   width: 100%;
-  aspect-ratio: 3 / 4;
+  background: #f7f7f7;
   overflow: hidden;
-  background: #f3f3f3;
+  border-radius: 1.15rem;
 }
 
 .product-card__flag {
@@ -1251,7 +1257,17 @@
 }
 
 .product-side__cta--secondary {
-  background: transparent !important;
+  background: #050505 !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 999px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.18em !important;
+  font-size: 13px !important;
+  padding: 14px 24px !important;
+  width: 100% !important;
+  cursor: pointer !important;
+  font-weight: 700 !important;
 }
 
 .product-side__note {
@@ -1615,10 +1631,9 @@
   }
 
   .hero-media-banner__overlay {
-    align-items: flex-start;
-    padding: 1rem 0.95rem 1.15rem;
-    background:
-      linear-gradient(180deg, rgba(5, 5, 5, 0.76) 0%, rgba(5, 5, 5, 0.22) 46%, rgba(5, 5, 5, 0.12) 100%);
+    align-items: flex-end; /* Bottom alignment for mobile */
+    padding: 1.5rem 1rem; /* Adjust padding for mobile bottom-left */
+    background: linear-gradient(0deg, rgba(5, 5, 5, 0.8) 0%, rgba(5, 5, 5, 0) 60%);
   }
 
   .hero-media-banner__copy {
@@ -1921,4 +1936,10 @@
   .nav-shell--hidden {
     transform: none;
   }
+}
+
+.footer-shell {
+  padding: 4.5rem 1.5rem 5.5rem;
+  background: #050505;
+  color: #fff;
 }
