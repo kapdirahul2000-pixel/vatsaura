@@ -2886,7 +2886,7 @@ export default function App() {
     return [productId, ...prev];
   }
 });
-
+};
   const addConfiguredProductToCart = (product = selectedProduct, config = productConfig) => {
     if (!product || !config) {
       return;
