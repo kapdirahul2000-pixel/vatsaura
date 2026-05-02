@@ -447,7 +447,7 @@ const readStorage = (key, fallback) => {
   try {
     const raw = window.localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
-  } catch (error) {
+  } catch (_error) {
     return fallback;
   }
 };
@@ -463,7 +463,7 @@ const writeStorage = (key, value) => {
 const readSessionValue = (key, fallback = "") => {
   try {
     return window.sessionStorage.getItem(key) || fallback;
-  } catch (error) {
+  } catch (_error) {
     return fallback;
   }
 };
@@ -612,7 +612,7 @@ const clearLegacyStoreSnapshot = () => {
 
 /** Pick highest `updatedAt` so local IndexedDB edits win over stale cloud reads. Tie-break favors richer payloads. */
 const snapshotFreshness = (snapshot) =>
-  snapshot && typeof snapshot === "object" ? Number(snapshot.updatedAt) || 0 : -1;
+  (snapshot && typeof snapshot === "object") ? (Number(snapshot.updatedAt) || 0) : -1;
 
 const snapshotRichness = (snapshot) => {
   if (!snapshot || typeof snapshot !== "object") {
@@ -1540,7 +1540,7 @@ export default function App() {
     reason: "",
     targetUserEmail: ""
   });
-  const [razorpayLoading, setRazorpayLoading] = useState(false);
+
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
     name: "",
@@ -1574,8 +1574,6 @@ export default function App() {
   const isAdminOwner = Boolean(userEmail) && ADMIN_EMAILS.includes(userEmail);
   const isAdmin = isAdminOwner && hasAdminAccess;
   const activeAdminEmail = isAdminOwner ? userEmail : frontendAdminEmail;
-  const configuredAdminAccountsLabel =
-    ADMIN_EMAILS.length > 0 ? ADMIN_EMAILS.join(", ") : "not configured";
   const currentUserRecord = useMemo(() => 
     users.find((entry) => entry.email?.toLowerCase() === userEmail),
     [users, userEmail]
@@ -2260,10 +2258,10 @@ export default function App() {
     const nextValue = event.target.value;
     const normalizedValue = nextValue.trim().toLowerCase();
     const shouldIgnoreInjectedEmail =
-      (!user || !hasAdminAccess) &&
+      ((!user || !hasAdminAccess) &&
       Boolean(normalizedValue) &&
       (normalizedValue === lastAuthenticatedEmailRef.current ||
-        ADMIN_EMAILS.includes(normalizedValue));
+        ADMIN_EMAILS.includes(normalizedValue)));
 
     if (shouldIgnoreInjectedEmail) {
       event.target.value = "";
@@ -2849,7 +2847,6 @@ export default function App() {
   };
 
   const handleRazorpayPayment = async (amountToPay, onPaymentSuccess) => {
-    setRazorpayLoading(true);
     try {
       // 1. Create order on backend
       const response = await fetch(`${process.env.REACT_APP_API_BASE_URL || "http://localhost:4000"}/api/payment/create-order`, {
@@ -2890,7 +2887,6 @@ export default function App() {
         },
         modal: {
           ondismiss: function () {
-            setRazorpayLoading(false);
           }
         }
       };
@@ -2898,13 +2894,11 @@ export default function App() {
       const rzp = new window.Razorpay(options);
       rzp.on("payment.failed", function (response) {
         setToast(`Payment failed: ${response.error.description}`);
-        setRazorpayLoading(false);
       });
       rzp.open();
     } catch (error) {
       console.error("Razorpay Error:", error);
       setToast(error.message || "Unable to start Razorpay payment.");
-      setRazorpayLoading(false);
     }
   };
 
@@ -3035,41 +3029,6 @@ export default function App() {
     navigateTo("payment");
   };
 
-  const updateCurrentUserRecord = (nextAuraPoints, totalSpent) => {
-    if (!user) {
-      return;
-    }
-
-    const email = String(user.email || "").toLowerCase();
-    setUsers((prev) =>
-      prev.map((entry) => {
-        if (entry.email?.toLowerCase() !== email) {
-          return entry;
-        }
-
-        const delta = nextAuraPoints - Number(entry.auraPoints || 0);
-        const now = Date.now();
-        const transaction = {
-          id: createId("tra"),
-          date: new Date(now).toLocaleDateString("en-IN"),
-          time: new Date(now).toLocaleTimeString("en-IN"),
-          amount: delta,
-          type: delta >= 0 ? "Deposit" : "Withdrawal",
-          adminName: "System",
-          reason: delta >= 0 ? "Cashback for order" : "Order payment"
-        };
-
-        return {
-          ...entry,
-          auraPoints: nextAuraPoints,
-          totalSpent: Number(entry.totalSpent || 0) + totalSpent,
-          totalOrders: Number(entry.totalOrders || 0) + 1,
-          auraHistory: [transaction, ...(entry.auraHistory || [])]
-        };
-      })
-    );
-  };
-
   const placeOrder = () => {
     if (cart.length === 0) {
       setToast("Your cart is empty.");
@@ -3081,7 +3040,7 @@ export default function App() {
       return;
     }
 
-    const auraUsed = (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user)) && user ? Math.min(auraPoints, cartTotal) : 0;
+    const auraUsed = (user && (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user))) ? Math.min(auraPoints, cartTotal) : 0;
     const remainingPayable = cartTotal - auraUsed;
     const isFullAuraPayment = auraUsed >= cartTotal && auraUsed > 0;
 
@@ -3139,7 +3098,7 @@ export default function App() {
 
   const finalizeOrder = (orderId, orderStatus, razorpayData = null) => {
     const now = Date.now();
-    const auraUsed = (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user)) && user ? Math.min(auraPoints, cartTotal) : 0;
+    const auraUsed = (user && (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user))) ? Math.min(auraPoints, cartTotal) : 0;
     const remainingPayable = cartTotal - auraUsed;
     const isFullAuraPayment = auraUsed >= cartTotal && auraUsed > 0;
 
@@ -3149,8 +3108,8 @@ export default function App() {
       dateLabel: new Date(now).toLocaleString("en-IN"),
       paymentMethod,
       status: orderStatus,
-      paymentSubmittedAt: (paymentMethod === "upi" || paymentMethod === "razorpay") && !isFullAuraPayment ? now : null,
-      paymentSubmittedLabel: (paymentMethod === "upi" || paymentMethod === "razorpay") && !isFullAuraPayment ? new Date(now).toLocaleString("en-IN") : null,
+      paymentSubmittedAt: ((paymentMethod === "upi" || paymentMethod === "razorpay") && !isFullAuraPayment) ? now : null,
+      paymentSubmittedLabel: ((paymentMethod === "upi" || paymentMethod === "razorpay") && !isFullAuraPayment) ? new Date(now).toLocaleString("en-IN") : null,
       items: cart,
       total: cartTotal,
       auraPointsUsed: auraUsed,
@@ -3220,7 +3179,6 @@ export default function App() {
     }
 
     setToast(`Order ${orderId} placed successfully.`);
-    setRazorpayLoading(false);
   };
 
   const setUserFormField = (field, value) => {
@@ -3305,7 +3263,7 @@ export default function App() {
     const amount = Number(auraActionForm.amount);
     const reason = auraActionForm.reason.trim();
 
-    if (isNaN(amount) || amount <= 0 && actionType !== "Edit") {
+    if (isNaN(amount) || (amount <= 0 && actionType !== "Edit")) {
       setToast("Enter a valid positive amount.");
       return;
     }
@@ -5189,7 +5147,7 @@ export default function App() {
                 padding: "18px",
                 textTransform: "uppercase",
                 letterSpacing: "2px",
-                opacity: (paymentMethod === "upi" && !isFullAuraPayment && (!checkoutForm.transactionId?.trim() || !checkoutForm.customerName?.trim())) ? 0.5 : 1
+                opacity: ((paymentMethod === "upi" && !isFullAuraPayment && ((!checkoutForm.transactionId?.trim() || !checkoutForm.customerName?.trim())))) ? 0.5 : 1
               }}
             >
               {isFullAuraPayment ? "Confirm with Aura Points" : "Place Order"}
