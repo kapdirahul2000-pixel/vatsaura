@@ -129,6 +129,7 @@ const emptyProductForm = {
   colors: "Black, White",
   sizes: "S, M, L, XL",
   badge: "Signature",
+  availability: "in_stock",
   imageData: "",
   mediaImages: [],
   videoData: ""
@@ -1005,6 +1006,7 @@ const normalizeProduct = (product) => ({
   price: Number(product.price) || 0,
   discount: Number(product.discount) || 0,
   stock: Number(product.stock) || 0,
+  availability: product.availability || "in_stock",
   createdAt: product.createdAt || Date.now(),
   mediaImages: getProductImages(product),
   videoData: getProductVideo(product),
@@ -1137,6 +1139,39 @@ const startOfWeek = () => {
 const startOfMonth = () => {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+};
+
+const CLOUDINARY_CLOUD_NAME = "dcm5dhh8e";
+const CLOUDINARY_UPLOAD_PRESET = "ml_default";
+const CLOUDINARY_API_KEY = "791798747133272";
+
+const uploadToCloudinary = async (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  formData.append("api_key", CLOUDINARY_API_KEY);
+
+  try {
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+      {
+        method: "POST",
+        body: formData
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("Cloudinary Error:", errorData);
+      throw new Error(errorData.error?.message || "Cloudinary upload failed");
+    }
+
+    const data = await response.json();
+    return data.secure_url;
+  } catch (error) {
+    console.error("Cloudinary Upload Error:", error);
+    throw error;
+  }
 };
 
 const fileToDataUrl = (file) =>
@@ -3463,6 +3498,7 @@ export default function App() {
       colors: product.colors.join(", "),
       sizes: product.sizes.join(", "),
       badge: product.badge || "",
+      availability: product.availability || "in_stock",
       imageData: getProductImages(product)[0] || "",
       mediaImages: getProductImages(product),
       videoData: getProductVideo(product)
@@ -3495,6 +3531,7 @@ export default function App() {
       colors: productForm.colors,
       sizes: productForm.sizes,
       badge: productForm.badge.trim(),
+      availability: productForm.availability,
       mediaImages: getProductImages(productForm),
       videoData: getProductVideo(productForm),
       imageData: getProductImages(productForm)[0] || "",
@@ -3924,7 +3961,14 @@ export default function App() {
     }
 
     try {
-      const uploads = await Promise.all(files.map((file) => fileToDataUrl(file)));
+      const uploads = await Promise.all(
+        files.map((file) => {
+          if (file.type.startsWith("image/")) {
+            return uploadToCloudinary(file);
+          }
+          return fileToDataUrl(file);
+        })
+      );
       await Promise.resolve(
         onDone(multiple ? uploads : uploads[0], multiple ? files : files[0])
       );
@@ -4432,7 +4476,11 @@ export default function App() {
       { label: "Edition", value: selectedProduct.badge || "Signature Drop" },
       {
         label: "Availability",
-        value: selectedProduct.stock > 0 ? `${selectedProduct.stock} ready to ship` : "Currently unavailable"
+        value: selectedProduct.availability === "coming_soon"
+          ? "Coming Soon"
+          : selectedProduct.availability === "out_of_stock"
+          ? "Out of Stock"
+          : selectedProduct.stock > 0 ? `${selectedProduct.stock} ready to ship` : "Currently unavailable"
       },
       { label: "Fabric", value: "Premium heavyweight cotton" },
       { label: "Care", value: "Cold wash inside out and dry flat" },
@@ -4505,13 +4553,32 @@ export default function App() {
               </section>
 
               <div className="product-side__actions">
-                <button
-                  onClick={() => addConfiguredProductToCart()}
-                  className="button-primary product-side__cta"
-                  style={primaryButtonStyle}
-                >
-                  Add to Cart
-                </button>
+                {selectedProduct.availability === "in_stock" ? (
+                  <button
+                    onClick={() => addConfiguredProductToCart()}
+                    className="button-primary product-side__cta"
+                    style={primaryButtonStyle}
+                  >
+                    Add to Cart
+                  </button>
+                ) : (
+                  <div
+                    style={{
+                      padding: "16px",
+                      borderRadius: "999px",
+                      background: tone.soft,
+                      border: `1px solid ${tone.line}`,
+                      textAlign: "center",
+                      color: tone.muted,
+                      fontWeight: 700,
+                      letterSpacing: "0.1em",
+                      textTransform: "uppercase",
+                      fontSize: "13px"
+                    }}
+                  >
+                    Coming Soon
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -4619,13 +4686,15 @@ export default function App() {
               </div>
 
               <div className="product-side__actions product-side__actions--secondary">
-                <button
-                  onClick={addAndGoToCart}
-                  className="button-secondary product-side__cta product-side__cta--secondary"
-                  style={buyNowButtonStyle}
-                >
-                  Buy Now
-                </button>
+                {selectedProduct.availability === "in_stock" && (
+                  <button
+                    onClick={addAndGoToCart}
+                    className="button-secondary product-side__cta product-side__cta--secondary"
+                    style={buyNowButtonStyle}
+                  >
+                    Buy Now
+                  </button>
+                )}
                 <button
                   onClick={() => toggleWishlist(selectedProduct.id)}
                   className="product-side__text-button"
@@ -6120,6 +6189,14 @@ export default function App() {
                         </option>
                       ))}
                     </select>
+                    <div style={{ display: "grid", gap: "8px" }}>
+                      <label style={{ fontSize: "12px", color: tone.muted, letterSpacing: "1px", textTransform: "uppercase" }}>Product Availability</label>
+                      <select value={productForm.availability} onChange={(event) => setProductFormField("availability", event.target.value)} style={selectStyle}>
+                        <option value="in_stock">In Stock</option>
+                        <option value="out_of_stock">Out of Stock</option>
+                        <option value="coming_soon">Coming Soon</option>
+                      </select>
+                    </div>
                     <textarea value={productForm.description} onChange={(event) => setProductFormField("description", event.target.value)} placeholder="Description" style={textareaStyle} />
                     <input value={productForm.colors} onChange={(event) => setProductFormField("colors", event.target.value)} placeholder="Colours: Black, White" style={inputStyle} />
                     <input value={productForm.sizes} onChange={(event) => setProductFormField("sizes", event.target.value)} placeholder="Sizes: S, M, L, XL" style={inputStyle} />
@@ -6416,7 +6493,7 @@ export default function App() {
                           <div>
                             <h3 style={{ margin: "0 0 4px" }}>{product.name}</h3>
                             <p style={{ margin: 0, color: tone.muted }}>
-                              {product.department} | {product.category}
+                              {product.department} | {product.category} | {product.availability?.replace("_", " ") || "in stock"}
                             </p>
                             <p style={{ margin: "6px 0 0" }}>
                               {formatCurrency(discountPrice(product))} | Stock {product.stock}
