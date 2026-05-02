@@ -506,44 +506,121 @@ const sendSmsViaTwilio = (message) =>
     request.end();
   });
 
-const sendEmailViaSmtp = async (subject, text) => {
-  const { host, port, secure, user, pass, from } = config.smtp;
+const isLikelyGoogleSmtpHost = (host) => /(^|\.)googlemail\.com$|(^|\.)gmail\.com$/i.test(String(host || "").trim());
 
-  if (!host || !from || !config.ownerEmail) {
-    return false;
+const gmailSmtpHint =
+  'Gmail/Google Workspace often rejects normal account passwords here. Enable 2-Step Verification on the Google account used for SMTP_USER, create an App password at https://myaccount.google.com/apppasswords and set SMTP_PASS to that 16-character value (spaces optional). SMTP_USER must match that Google account exactly; SMTP_FROM should normally be that same email. Use SMTP_HOST=smtp.gmail.com with SMTP_PORT=587 and SMTP_SECURE=false unless you intentionally use TLS on port 465.';
+
+const formatSmtpFailureHint = (err) => {
+  const blob = `${err.code || ""} ${err.responseCode || ""} ${err.response || ""} ${err.message || ""}`.trim();
+
+  if (/535|\bBADCREDENTIALS\b|INVALID LOGIN|authentication failed|Username and Password not accepted/i.test(blob)) {
+    return gmailSmtpHint;
   }
 
-  const transport = nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    ...(user ? { auth: { user, pass } } : {})
-  });
+  if (/socket|timed out|ECONNREFUSED|EAI_|certificate|SELF_SIGNED/i.test(blob)) {
+    return "Check SMTP_HOST and SMTP_PORT, firewall/network access, and that SMTP_SECURE matches your provider (typically false on port 587, true only on port 465).";
+  }
 
-  await transport.sendMail({
-    from,
-    to: config.ownerEmail,
-    subject,
-    text
-  });
+  return "Verify SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, and SMTP_FROM in the server .env file, restart the backend, and try again.";
+};
 
-  return true;
+const sendEmailViaSmtp = async (subject, text) => {
+  const raw = config.smtp;
+  let host = String(raw.host || "").trim();
+  const port = Number(raw.port || 587);
+  const secure = port === 465 ? true : raw.secure;
+  const user = String(raw.user || "").trim();
+  const pass = String(raw.pass || "").trim();
+  const fromConfigured = String(raw.from || "").trim();
+  const from = fromConfigured || user;
+  const userLower = normalizeEmail(user);
+  const ownerLower = normalizeEmail(config.ownerEmail);
+
+  if ((user && !pass) || (!user && pass)) {
+    return {
+      success: false,
+      hint:
+        "SMTP authentication is incomplete: set both SMTP_USER and SMTP_PASS together (both empty only for relays that allow unauthenticated SMTP), then restart the server."
+    };
+  }
+
+  const ownerLooksGmail = ownerLower.includes("@gmail.com") || ownerLower.includes("@googlemail.com");
+  const userLooksGmail = userLower.includes("@gmail.com") || userLower.includes("@googlemail.com");
+
+  if (!host && (userLooksGmail || ownerLooksGmail)) {
+    host = "smtp.gmail.com";
+  }
+
+  if (!host || !from || !config.ownerEmail) {
+    return {
+      success: false,
+      hint: `Set SMTP_HOST (for Gmail use smtp.gmail.com), SMTP_USER, SMTP_PASS, SMTP_FROM or matching SMTP_USER, and ADMIN_OWNER_EMAIL in the server .env. ${gmailSmtpHint}`
+    };
+  }
+
+  try {
+    const transportConfig = {
+      host,
+      port,
+      secure,
+      connectionTimeout: 25_000,
+      socketTimeout: 25_000,
+      ...(user && pass ? { auth: { user, pass } } : {}),
+      ...(isLikelyGoogleSmtpHost(host) && port === 587 && !secure
+        ? { requireTLS: true, tls: { minVersion: "TLSv1.2" } }
+        : {})
+    };
+
+    const transport = nodemailer.createTransport(transportConfig);
+
+    const gmailHost = isLikelyGoogleSmtpHost(host);
+
+    await transport.sendMail({
+      // Gmail rejects many From addresses that don't match the authenticated account.
+      from: gmailHost && user && normalizeEmail(from) !== userLower ? user : from,
+      to: config.ownerEmail,
+      replyTo: user || undefined,
+      subject,
+      text
+    });
+
+    return { success: true };
+  } catch (error) {
+    const hint = formatSmtpFailureHint(error);
+
+    appendOtpLog(`[SMTP][FAILED] ${error.message || error}`);
+
+    return {
+      success: false,
+      error: error.message || String(error),
+      hint
+    };
+  }
 };
 
 const deliverOtp = async (method, otp) => {
   const message = `${config.appName} admin OTP: ${otp}`;
 
   if (method === "email") {
-    const delivered = await sendEmailViaSmtp("Admin OTP", message);
+    const smtpResult = await sendEmailViaSmtp("Admin OTP", message);
+    const delivered = smtpResult.success;
+
+    let smtpDeliveryNote;
 
     if (!delivered) {
       const fallbackMessage = `[Admin OTP][EMAIL][${config.ownerEmail}] ${otp}`;
       console.info(fallbackMessage);
       appendOtpLog(fallbackMessage);
+
+      smtpDeliveryNote = smtpResult.hint
+        ? `${smtpResult.hint} The OTP was written to the server console and ${path.basename(config.otpLogFile)}.`
+        : `Email sending failed.${smtpResult.error ? ` (${smtpResult.error})` : ""} The OTP was written to the server console and ${path.basename(config.otpLogFile)}.`;
     }
 
     return {
-      contact: maskEmail(config.ownerEmail)
+      contact: maskEmail(config.ownerEmail),
+      ...(smtpDeliveryNote ? { smtpDeliveryNote } : {})
     };
   }
 
@@ -638,7 +715,8 @@ app.post("/api/admin/security/setup/request-otp", async (req, res) => {
     const delivery = await deliverOtp(method, otp);
     res.json({
       challengeId,
-      contact: delivery.contact
+      contact: delivery.contact,
+      ...(delivery.smtpDeliveryNote ? { smtpDeliveryNote: delivery.smtpDeliveryNote } : {})
     });
   } catch (error) {
     challenges.delete(challengeId);
@@ -822,7 +900,8 @@ app.post("/api/admin/auth/send-otp", async (req, res) => {
     const delivery = await deliverOtp(method, otp);
 
     res.json({
-      contact: delivery.contact
+      contact: delivery.contact,
+      ...(delivery.smtpDeliveryNote ? { smtpDeliveryNote: delivery.smtpDeliveryNote } : {})
     });
   } catch (error) {
     res.status(500).json({ error: error.message || "Unable to send admin OTP." });
