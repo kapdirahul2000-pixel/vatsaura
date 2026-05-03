@@ -34,8 +34,12 @@ const imageUpload = multer({
 
 const app = express();
 
+const allowedOrigins = [
+  "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app"
+];
+
 const corsOptions = {
-  origin: "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app",
+  origin: allowedOrigins,
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   optionsSuccessStatus: 204
@@ -119,6 +123,24 @@ const defaultSecurityStore = () => ({
 const sessions = new Map();
 const challenges = new Map();
 const userSessions = new Map();
+
+app.use((req, res, next) => {
+  const requestOrigin = req.headers.origin;
+
+  if (allowedOrigins.includes(requestOrigin)) {
+    res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  }
+
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+
+  next();
+});
 
 // 1. Configure CORS middleware
 app.use(cors(corsOptions));
