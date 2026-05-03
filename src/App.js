@@ -2466,10 +2466,10 @@ export default function App() {
     setRazorpayLoading(true);
     try {
       // 1. Create order on backend
-      const response = await fetch(`${process.env.REACT_APP_API_BASE_URL || "http://localhost:4000"}/api/payment/create-order`, {
+      const response = await fetch("/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: amountToPay })
+        body: JSON.stringify({ amount: Number(amountToPay) })
       });
 
       const orderData = await response.json();
@@ -2480,7 +2480,7 @@ export default function App() {
 
       // 2. Configure Razorpay options
       const options = {
-        key: process.env.REACT_APP_RAZORPAY_KEY_ID || orderData.key_id || "rzp_test_placeholder_id",
+        key: process.env.REACT_APP_RAZORPAY_KEY_ID || orderData.key_id || "rzp_test_Skpnql13YPlCrY",
         amount: orderData.amount,
         currency: orderData.currency,
         name: siteName,

@@ -16,8 +16,8 @@ const app = express();
 
 // Razorpay Instance (Replace with your actual keys from Razorpay dashboard)
 const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_placeholder_id",
-  key_secret: process.env.RAZORPAY_KEY_SECRET || "rzp_test_placeholder_secret"
+  key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_Skpnql13YPlCrY",
+  key_secret: process.env.RAZORPAY_KEY_SECRET || "aonQpIHw61ojQLibKgxgR8B3"
 });
 
 const DEFAULT_ADMIN_EMAILS = [
@@ -1053,6 +1053,29 @@ app.post("/api/admin/security/two-factor", (req, res) => {
 });
 
 // Razorpay Order Creation Endpoint
+app.post("/create-order", async (req, res) => {
+  const { amount, currency = "INR" } = req.body;
+
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ error: "Invalid amount." });
+  }
+
+  const options = {
+    amount: Math.round(Number(amount) * 100), // Amount in paise
+    currency,
+    receipt: `receipt_${shortid.generate()}`,
+    payment_capture: 1
+  };
+
+  try {
+    const response = await razorpay.orders.create(options);
+    res.json(response);
+  } catch (error) {
+    console.error("Razorpay Order Error:", error);
+    res.status(500).json({ error: "Unable to create Razorpay order." });
+  }
+});
+
 app.post("/api/payment/create-order", async (req, res) => {
   const { amount, currency = "INR" } = req.body;
 
