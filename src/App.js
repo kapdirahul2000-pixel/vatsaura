@@ -146,6 +146,28 @@ const initialCheckoutForm = {
   useAuraPoints: true
 };
 
+const PRODUCT_AVAILABILITY = {
+  IN_STOCK: "in-stock",
+  OUT_OF_STOCK: "out-of-stock",
+  COMING_SOON: "coming-soon"
+};
+
+const normalizeProductAvailability = (value, stock = 0) => {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+
+  if (normalizedValue === PRODUCT_AVAILABILITY.OUT_OF_STOCK) {
+    return PRODUCT_AVAILABILITY.OUT_OF_STOCK;
+  }
+
+  if (normalizedValue === PRODUCT_AVAILABILITY.COMING_SOON) {
+    return PRODUCT_AVAILABILITY.COMING_SOON;
+  }
+
+  return Number(stock) > 0
+    ? PRODUCT_AVAILABILITY.IN_STOCK
+    : PRODUCT_AVAILABILITY.OUT_OF_STOCK;
+};
+
 const emptyProductForm = {
   id: "",
   name: "",
@@ -154,6 +176,7 @@ const emptyProductForm = {
   price: "1699",
   discount: "0",
   stock: "10",
+  availability: PRODUCT_AVAILABILITY.IN_STOCK,
   description: "",
   colors: "Black, White",
   sizes: "S, M, L, XL",
@@ -1040,6 +1063,7 @@ const normalizeProduct = (product) => ({
   price: Number(product.price) || 0,
   discount: Number(product.discount) || 0,
   stock: Number(product.stock) || 0,
+  availability: normalizeProductAvailability(product.availability, product.stock),
   createdAt: product.createdAt || Date.now(),
   mediaImages: getProductImages(product),
   videoData: getProductVideo(product),
@@ -2586,6 +2610,11 @@ export default function App() {
       return;
     }
 
+    if (product.availability !== PRODUCT_AVAILABILITY.IN_STOCK) {
+      setToast(product.availability === PRODUCT_AVAILABILITY.COMING_SOON ? "Coming soon." : "Product is out of stock.");
+      return;
+    }
+
     const quantity = Math.max(1, Number(config.quantity || 1));
     const unitPrice = discountPrice(product);
     const cartItem = {
@@ -3154,6 +3183,7 @@ export default function App() {
       price: String(product.price),
       discount: String(product.discount),
       stock: String(product.stock),
+      availability: normalizeProductAvailability(product.availability, product.stock),
       description: product.description,
       colors: product.colors.join(", "),
       sizes: product.sizes.join(", "),
@@ -3186,6 +3216,7 @@ export default function App() {
       price: Number(productForm.price),
       discount: Number(productForm.discount),
       stock: Number(productForm.stock),
+      availability: normalizeProductAvailability(productForm.availability, productForm.stock),
       description: productForm.description.trim(),
       colors: productForm.colors,
       sizes: productForm.sizes,
@@ -4132,12 +4163,23 @@ export default function App() {
     const finalPrice = discountPrice(selectedProduct);
     const mediaItems = getProductMediaItems(selectedProduct);
     const selectedQuantity = Math.max(1, Number(productConfig.quantity) || 1);
+    const productAvailability = normalizeProductAvailability(
+      selectedProduct.availability,
+      selectedProduct.stock
+    );
+    const isProductInStock = productAvailability === PRODUCT_AVAILABILITY.IN_STOCK;
+    const isProductComingSoon = productAvailability === PRODUCT_AVAILABILITY.COMING_SOON;
+    const availabilityText = isProductInStock
+      ? `${selectedProduct.stock} T-shirt${selectedProduct.stock === 1 ? "" : "s"} available`
+      : isProductComingSoon
+        ? "Coming Soon"
+        : "Out of Stock";
     const productDetails = [
       { label: "Collection", value: selectedProduct.category },
       { label: "Edition", value: selectedProduct.badge || "Signature Drop" },
       {
         label: "Availability",
-        value: selectedProduct.stock > 0 ? `${selectedProduct.stock} ready to ship` : "Currently unavailable"
+        value: availabilityText
       },
       { label: "Fabric", value: "Premium heavyweight cotton" },
       { label: "Care", value: "Cold wash inside out and dry flat" },
@@ -4210,16 +4252,19 @@ export default function App() {
               </section>
 
               <div className="product-side__actions">
-                <button
-                  onClick={() => addConfiguredProductToCart()}
-                  className="button-primary product-side__cta"
-                  style={primaryButtonStyle}
-                >
-                  Add to Cart
-                </button>
-                <p className="product-side__note">
-                  Clean monochrome finish, oversized drape, and a gallery-style media flow built for close inspection.
-                </p>
+                {isProductInStock ? (
+                  <button
+                    onClick={() => addConfiguredProductToCart()}
+                    className="button-primary product-side__cta"
+                    style={primaryButtonStyle}
+                  >
+                    Add to Cart
+                  </button>
+                ) : (
+                  <p className="product-side__note">
+                    {isProductComingSoon ? "Coming Soon" : "Out of Stock"}
+                  </p>
+                )}
               </div>
             </div>
           </section>
@@ -4314,7 +4359,11 @@ export default function App() {
               <div className="product-config-summary">
                 <span>Selected setup</span>
                 <strong>{productConfig.color} / {productConfig.size}</strong>
-                <p>{selectedQuantity} piece{selectedQuantity > 1 ? "s" : ""} ready for checkout</p>
+                <p>
+                  {isProductInStock
+                    ? `${selectedQuantity} piece${selectedQuantity > 1 ? "s" : ""} ready for checkout`
+                    : availabilityText}
+                </p>
               </div>
 
               <div className="product-detail-list">
@@ -4327,13 +4376,15 @@ export default function App() {
               </div>
 
               <div className="product-side__actions product-side__actions--secondary">
-                <button
-                  onClick={addAndGoToCart}
-                  className="button-secondary product-side__cta product-side__cta--secondary"
-                  style={buyNowButtonStyle}
-                >
-                  Buy Now
-                </button>
+                {isProductInStock ? (
+                  <button
+                    onClick={addAndGoToCart}
+                    className="button-secondary product-side__cta product-side__cta--secondary"
+                    style={buyNowButtonStyle}
+                  >
+                    Buy Now
+                  </button>
+                ) : null}
                 <button
                   onClick={() => toggleWishlist(selectedProduct.id)}
                   className="product-side__text-button"
@@ -5576,6 +5627,11 @@ export default function App() {
                       <input value={productForm.discount} onChange={(event) => setProductFormField("discount", event.target.value)} placeholder="Discount" style={inputStyle} />
                       <input value={productForm.stock} onChange={(event) => setProductFormField("stock", event.target.value)} placeholder="Stock" style={inputStyle} />
                     </div>
+                    <select value={productForm.availability} onChange={(event) => setProductFormField("availability", event.target.value)} style={selectStyle}>
+                      <option value={PRODUCT_AVAILABILITY.IN_STOCK}>In Stock</option>
+                      <option value={PRODUCT_AVAILABILITY.OUT_OF_STOCK}>Out of Stock</option>
+                      <option value={PRODUCT_AVAILABILITY.COMING_SOON}>Coming Soon</option>
+                    </select>
                     <input value={productForm.badge} onChange={(event) => setProductFormField("badge", event.target.value)} placeholder="Badge" style={inputStyle} />
                     <div
                       style={{
