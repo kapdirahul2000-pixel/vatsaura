@@ -1,4 +1,5 @@
 const express = require("express");
+const cors = require("cors");
 const dotenv = require("dotenv");
 const fs = require("fs");
 const path = require("path");
@@ -135,34 +136,14 @@ const sessions = new Map();
 const challenges = new Map();
 const userSessions = new Map();
 
+// Enable CORS for all origins
+app.use(cors());
+
 app.use(
   express.json({
     limit: "1mb"
   })
 );
-
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-
-  if (isAllowedOrigin(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin || config.clientOrigin || "*");
-  }
-
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Credentials", "false");
-  res.setHeader("Cache-Control", "no-store");
-  res.setHeader("Referrer-Policy", "same-origin");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
-
-  if (req.method === "OPTIONS") {
-    res.status(204).end();
-    return;
-  }
-
-  next();
-});
 
 const ensureDataFile = () => {
   const folder = path.dirname(config.dataFile);
