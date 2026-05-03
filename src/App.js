@@ -2466,7 +2466,7 @@ export default function App() {
     setRazorpayLoading(true);
     try {
       // 1. Create order on backend
-      const response = await fetch("/create-order", {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || "https://vatsaura.onrender.com"}/create-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: Number(amountToPay) })
