@@ -113,13 +113,30 @@ const sessions = new Map();
 const challenges = new Map();
 const userSessions = new Map();
 
-app.use(cors({ 
- origin: "*", 
- methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
- allowedHeaders: ["Content-Type", "Authorization"] 
- })); 
- 
- app.options("*", cors()); 
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app"
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+  credentials: true,
+  optionsSuccessStatus: 200 // Some legacy browsers (IE11, various SmartTVs) choke on 204
+}));
+
+// Handle preflight requests for all routes
+app.options("*", cors()); 
 
 app.use(
   express.json({
