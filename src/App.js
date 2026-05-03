@@ -2480,7 +2480,7 @@ export default function App() {
 
       // 2. Configure Razorpay options
       const options = {
-        key: process.env.REACT_APP_RAZORPAY_KEY_ID || orderData.key_id || "rzp_test_Skpnql13YPlCrY",
+        key: process.env.REACT_APP_RAZORPAY_KEY_ID || orderData.key_id || "rzp_test_SkuVtxf6Sv14Z3",
         amount: orderData.amount,
         currency: orderData.currency,
         name: siteName,
