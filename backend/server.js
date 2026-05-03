@@ -98,29 +98,6 @@ const config = {
   }
 };
 
-const extraAllowedOrigins = String(process.env.EXTRA_CLIENT_ORIGINS || "")
-  .split(",")
-  .map((entry) => entry.trim())
-  .filter(Boolean);
-
-const isAllowedOrigin = (origin) => {
-  const value = String(origin || "").trim();
-
-  if (!value) {
-    return true;
-  }
-
-  if (value === config.clientOrigin) {
-    return true;
-  }
-
-  if (extraAllowedOrigins.includes(value)) {
-    return true;
-  }
-
-  return false;
-};
-
 const defaultSecurityStore = () => ({
   password: "",
   pin: "",
@@ -136,8 +113,28 @@ const sessions = new Map();
 const challenges = new Map();
 const userSessions = new Map();
 
-// Enable CORS for all origins
-app.use(cors());
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app"
+];
+
+// Restricted CORS configuration
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+  credentials: true,
+  optionsSuccessStatus: 200 // Some legacy browsers (IE11, various SmartTVs) choke on 204
+}));
 
 app.use(
   express.json({
