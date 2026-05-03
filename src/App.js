@@ -1476,6 +1476,7 @@ export default function App() {
   const searchRef = useRef(null);
   const searchInputRef = useRef(null);
   const bannerResetTimerRef = useRef(null);
+  const activeBannerIndexRef = useRef(0);
   const persistentSaveTimerRef = useRef(null);
   const lastAuthenticatedEmailRef = useRef("");
 
@@ -1602,6 +1603,7 @@ export default function App() {
     activeHomepageBanner?.aspectRatio,
     DEFAULT_BANNER_ASPECT_RATIO
   ), [activeHomepageBanner]);
+  activeBannerIndexRef.current = activeBannerIndex;
   const managedHomeHighlights = useMemo(() => normalizeStoredHomeHighlights(settings.homeHighlights), [settings.homeHighlights]);
   const latestDropProductIds = useMemo(() => sanitizeStoredProductIds(
     settings.latestDropProductIds,
@@ -1841,7 +1843,9 @@ export default function App() {
       return;
     }
 
-    setActiveBannerIndex((prev) => (prev >= homepageBanners.length ? 0 : prev));
+    setActiveBannerIndex((prev) =>
+      prev > homepageBanners.length ? 0 : prev
+    );
     setBannerTransitionEnabled(true);
   }, [homepageBanners.length]);
 
@@ -1852,7 +1856,16 @@ export default function App() {
 
     const timer = window.setInterval(() => {
       setBannerTransitionEnabled(true);
-      setActiveBannerIndex((prev) => prev + 1);
+      setActiveBannerIndex((prev) => {
+        const n = homepageBanners.length;
+        if (n <= 1) {
+          return 0;
+        }
+        if (prev >= n) {
+          return 0;
+        }
+        return prev + 1;
+      });
     }, HOME_BANNER_AUTOPLAY_MS);
 
     return () => window.clearInterval(timer);
@@ -3637,10 +3650,19 @@ export default function App() {
     setActiveBannerIndex(index);
   };
 
-  const handleHeroCarouselTransitionEnd = () => {
+  const handleHeroCarouselTransitionEnd = (event) => {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    const property = String(event.propertyName || "");
+    if (property && !property.includes("transform")) {
+      return;
+    }
+
     if (
       homepageBanners.length <= 1 ||
-      activeBannerIndex !== homepageBanners.length
+      activeBannerIndexRef.current !== homepageBanners.length
     ) {
       return;
     }
@@ -3866,7 +3888,7 @@ export default function App() {
                       loop
                       muted
                       playsInline
-                      preload="metadata"
+                      preload="auto"
                       className="hero-media-banner__asset"
                     />
                   ) : (
@@ -3875,7 +3897,7 @@ export default function App() {
                       alt={banner.title || `${siteName} banner ${index + 1}`}
                       className="hero-media-banner__asset"
                       decoding="async"
-                      loading={index === 0 ? "eager" : "lazy"}
+                      loading="eager"
                       fetchPriority={index === 0 ? "high" : "auto"}
                     />
                   )}
