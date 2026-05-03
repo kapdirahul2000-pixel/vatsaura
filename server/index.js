@@ -7,10 +7,29 @@ const https = require("https");
 const nodemailer = require("nodemailer");
 const Razorpay = require("razorpay");
 const shortid = require("shortid");
+const cloudinary = require("cloudinary").v2;
+const multer = require("multer");
 
 dotenv.config();
 // Also try loading from the parent directory if running from the server folder
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
+
+const cloudinaryCloudName = String(
+  process.env.CLOUDINARY_CLOUD_NAME || "dcm5dhh8e"
+).trim();
+
+cloudinary.config({
+  cloud_name: cloudinaryCloudName,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+const productsMemoryStore = [];
+
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 }
+});
 
 const app = express();
 
@@ -78,6 +97,11 @@ const config = {
   }
 };
 
+const extraAllowedOrigins = String(process.env.EXTRA_CLIENT_ORIGINS || "")
+  .split(",")
+  .map((entry) => entry.trim())
+  .filter(Boolean);
+
 const isAllowedOrigin = (origin) => {
   const value = String(origin || "").trim();
 
@@ -86,6 +110,10 @@ const isAllowedOrigin = (origin) => {
   }
 
   if (value === config.clientOrigin) {
+    return true;
+  }
+
+  if (extraAllowedOrigins.includes(value)) {
     return true;
   }
 
@@ -1291,6 +1319,62 @@ app.get("/api/health", (_req, res) => {
     name: config.appName,
     time: new Date().toISOString()
   });
+});
+
+app.post("/upload", imageUpload.single("file"), async (req, res) => {
+  if (!process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    res.status(500).json({ error: "Cloudinary API credentials are not configured." });
+    return;
+  }
+
+  if (!req.file) {
+    res.status(400).json({ error: 'No file uploaded. Use multipart field name "file".' });
+    return;
+  }
+
+  try {
+    const dataUri = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
+    const uploadOptions = {
+      folder: "products"
+    };
+    const uploadPreset = String(process.env.CLOUDINARY_UPLOAD_PRESET || "").trim();
+
+    if (uploadPreset) {
+      uploadOptions.upload_preset = uploadPreset;
+    }
+
+    const result = await cloudinary.uploader.upload(dataUri, uploadOptions);
+
+    res.json({
+      url: result.secure_url,
+      image: result.secure_url
+    });
+  } catch (error) {
+    console.error("Cloudinary upload error:", error);
+    res.status(500).json({ error: error.message || "Upload failed." });
+  }
+});
+
+app.post("/products", (req, res) => {
+  const name = String(req.body?.name || "").trim();
+  const image = String(req.body?.image || "").trim();
+
+  if (!name || !image) {
+    res.status(400).json({ error: "name and image are required." });
+    return;
+  }
+
+  productsMemoryStore.push({ name, image });
+  res.status(201).json({ name, image });
+});
+
+app.get("/products", (_req, res) => {
+  res.json(
+    productsMemoryStore.map((entry) => ({
+      name: entry.name,
+      image: entry.image
+    }))
+  );
 });
 
 app.listen(config.port, () => {
