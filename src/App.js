@@ -30,6 +30,53 @@ const STORAGE_KEYS = {
 const CLOUDINARY_CLOUD_NAME = "dcm5dhh8e";
 const CLOUDINARY_UPLOAD_PRESET = "ml_default";
 const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`;
+const CLOUDINARY_BASE = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}`;
+
+/** Turn Cloudinary public_id, partial paths, or bare upload paths into a full secure URL. */
+const resolveCloudinaryMediaUrl = (raw) => {
+  const value = String(raw ?? "").trim();
+  if (!value) {
+    return "";
+  }
+
+  if (value.startsWith("//")) {
+    return `https:${value}`;
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  if (value.startsWith("data:") || value.startsWith("blob:")) {
+    return value;
+  }
+
+  if (value.startsWith("/static/") || value.startsWith("/assets/")) {
+    return value;
+  }
+
+  if (/^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("\\\\")) {
+    return value;
+  }
+
+  const pathSafe = value.replace(/^\/+/, "");
+  if (!pathSafe) {
+    return value;
+  }
+
+  if (pathSafe.startsWith(`${CLOUDINARY_CLOUD_NAME}/`)) {
+    return `https://res.cloudinary.com/${pathSafe}`;
+  }
+
+  if (/^(image|video)\/upload\//.test(pathSafe)) {
+    return `${CLOUDINARY_BASE}/${pathSafe}`;
+  }
+
+  const isVideo = /\.(?:mp4|webm|mov|m4v)(?:\?|$)/i.test(pathSafe);
+  const resource = isVideo ? "video" : "image";
+
+  return `${CLOUDINARY_BASE}/${resource}/upload/${pathSafe}`;
+};
 
 const PERSISTENT_STORE_CONFIG = {
   dbName: "vatsauraStorefrontDb",
@@ -789,8 +836,11 @@ const normalizeStoredBanners = (banners) => {
     .slice(0, MAX_HOME_BANNERS);
 };
 
-const getBannerMediaSource = (banner) =>
-  String(banner?.mediaData || "").trim() || brandHeaderVideo;
+const getBannerMediaSource = (banner) => {
+  const custom = String(banner?.mediaData || "").trim();
+
+  return custom ? resolveCloudinaryMediaUrl(custom) : brandHeaderVideo;
+};
 
 const getBannerMediaType = (banner) => {
   const source = getBannerMediaSource(banner);
@@ -939,10 +989,14 @@ const getProductImages = (product) => {
       ? [product.imageData]
       : [];
 
-  return baseImages.filter(Boolean).slice(0, 6);
+  return baseImages
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((src) => resolveCloudinaryMediaUrl(src));
 };
 
-const getProductVideo = (product) => String(product?.videoData || "").trim();
+const getProductVideo = (product) =>
+  resolveCloudinaryMediaUrl(String(product?.videoData || "").trim());
 
 const getProductMediaItems = (product) => {
   const images = getProductImages(product).map((src, index) => ({
@@ -1523,7 +1577,9 @@ export default function App() {
   const weeklySales = useMemo(() => getRangeTotal(orders, startOfWeek()), [orders]);
   const monthlySales = useMemo(() => getRangeTotal(orders, startOfMonth()), [orders]);
   const totalSales = useMemo(() => sumSales(orders), [orders]);
-  const brandMediaSource = settings.logoData || brandHeaderVideo;
+  const brandMediaSource = settings.logoData
+    ? resolveCloudinaryMediaUrl(settings.logoData)
+    : brandHeaderVideo;
   const brandMediaIsVideo = isVideoSource(brandMediaSource);
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
   const hasActiveSearch = Boolean(normalizedSearchTerm);
@@ -4596,7 +4652,7 @@ export default function App() {
                   {settings.upiQrData ? (
                     <div style={{ display: "grid", placeItems: "center", background: "#fff", padding: "12px", borderRadius: "0px" }}>
                       <img
-                        src={settings.upiQrData}
+                        src={resolveCloudinaryMediaUrl(settings.upiQrData)}
                         alt="UPI QR"
                         style={{ width: "220px", maxWidth: "100%", filter: "none" }}
                       />
@@ -4639,7 +4695,7 @@ export default function App() {
                   {checkoutForm.paymentScreenshot && (
                     <div style={{ position: "relative", width: "80px" }}>
                       <img
-                        src={checkoutForm.paymentScreenshot}
+                        src={resolveCloudinaryMediaUrl(checkoutForm.paymentScreenshot)}
                         alt="Screenshot"
                         style={{ width: "100%", height: "100px", objectFit: "cover", borderRadius: "0px" }}
                       />
@@ -5915,12 +5971,16 @@ export default function App() {
                                 <div style={{ marginTop: "10px" }}>
                                   <p style={{ margin: "0 0 6px", color: tone.muted }}>Screenshot:</p>
                                   <a
-                                    href={selectedAdminOrder.customer.paymentScreenshot}
+                                    href={resolveCloudinaryMediaUrl(
+                                      selectedAdminOrder.customer.paymentScreenshot
+                                    )}
                                     target="_blank"
                                     rel="noreferrer"
                                   >
                                     <img
-                                      src={selectedAdminOrder.customer.paymentScreenshot}
+                                      src={resolveCloudinaryMediaUrl(
+                                        selectedAdminOrder.customer.paymentScreenshot
+                                      )}
                                       alt="Payment Proof"
                                       style={{
                                         maxWidth: "200px",
@@ -6868,7 +6928,7 @@ export default function App() {
                     {settings.upiQrData ? (
                       <>
                         <img
-                          src={settings.upiQrData}
+                          src={resolveCloudinaryMediaUrl(settings.upiQrData)}
                           alt="Configured UPI QR"
                           style={{
                             width: "220px",
