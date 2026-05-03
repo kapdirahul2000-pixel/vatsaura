@@ -35,11 +35,28 @@ const imageUpload = multer({
 const app = express();
 
 const allowedOrigins = [
-  "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app"
+  "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app",
+  "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app/"
 ];
 
+const isAllowedOrigin = (origin) => {
+  const normalizedOrigin = String(origin || "").trim().replace(/\/$/, "");
+
+  return (
+    allowedOrigins.map((entry) => entry.replace(/\/$/, "")).includes(normalizedOrigin) ||
+    /^https:\/\/vatsaura.*\.vercel\.app$/i.test(normalizedOrigin)
+  );
+};
+
 const corsOptions = {
-  origin: allowedOrigins,
+  origin(origin, callback) {
+    if (!origin || isAllowedOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error("Not allowed by CORS"));
+  },
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   optionsSuccessStatus: 204
@@ -127,7 +144,7 @@ const userSessions = new Map();
 app.use((req, res, next) => {
   const requestOrigin = req.headers.origin;
 
-  if (allowedOrigins.includes(requestOrigin)) {
+  if (isAllowedOrigin(requestOrigin)) {
     res.setHeader("Access-Control-Allow-Origin", requestOrigin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -1308,6 +1325,10 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     name: config.appName,
+    cors: {
+      allowedOrigins: allowedOrigins.map((entry) => entry.replace(/\/$/, "")),
+      vercelPreviewAllowed: true
+    },
     time: new Date().toISOString()
   });
 });
