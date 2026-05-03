@@ -34,6 +34,13 @@ const imageUpload = multer({
 
 const app = express();
 
+const corsOptions = {
+  origin: "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204
+};
+
 // Razorpay Instance (Replace with your actual keys from Razorpay dashboard)
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -113,19 +120,11 @@ const sessions = new Map();
 const challenges = new Map();
 const userSessions = new Map();
 
-// 1. Configure CORS middleware (Simple Setup)
-app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app"
-  ],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true
-}));
+// 1. Configure CORS middleware
+app.use(cors(corsOptions));
 
 // 2. Handle preflight requests for all routes
-app.options("*", cors());
+app.options("*", cors(corsOptions));
 
 // 3. Body parser middleware
 app.use(
