@@ -29,7 +29,7 @@ const STORAGE_KEYS = {
 
 const CLOUDINARY_CLOUD_NAME = "dcm5dhh8e";
 const CLOUDINARY_UPLOAD_PRESET = "ml_default";
-const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`;
+const CLOUDINARY_UPLOAD_BASE = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}`;
 const CLOUDINARY_BASE = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}`;
 
 /** Turn Cloudinary public_id, partial paths, or bare upload paths into a full secure URL. */
@@ -970,7 +970,11 @@ const createInitialProducts = () => {
 
 const isVideoSource = (source) => {
   const value = String(source || "");
-  return value.startsWith("data:video") || /\.mp4($|\?)/i.test(value);
+  return (
+    value.startsWith("data:video") ||
+    /\/video\/upload\//i.test(value) ||
+    /\.(?:mp4|webm|mov|m4v)($|\?)/i.test(value)
+  );
 };
 
 const createId = (prefix) =>
@@ -1203,7 +1207,8 @@ const uploadFileToCloudinary = async (file) => {
   formData.append("file", file);
   formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
 
-  const response = await fetch(CLOUDINARY_UPLOAD_URL, {
+  const resourceType = getFileMediaType(file) === "video" ? "video" : "image";
+  const response = await fetch(`${CLOUDINARY_UPLOAD_BASE}/${resourceType}/upload`, {
     method: "POST",
     body: formData
   });
@@ -1543,7 +1548,7 @@ export default function App() {
     reason: "",
     targetUserEmail: ""
   });
-  const [razorpayLoading, setRazorpayLoading] = useState(false);
+  const [, setRazorpayLoading] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
     name: "",
@@ -2677,41 +2682,6 @@ export default function App() {
     }
 
     navigateTo("payment");
-  };
-
-  const updateCurrentUserRecord = (nextAuraPoints, totalSpent) => {
-    if (!user) {
-      return;
-    }
-
-    const email = String(user.email || "").toLowerCase();
-    setUsers((prev) =>
-      prev.map((entry) => {
-        if (entry.email?.toLowerCase() !== email) {
-          return entry;
-        }
-
-        const delta = nextAuraPoints - Number(entry.auraPoints || 0);
-        const now = Date.now();
-        const transaction = {
-          id: createId("tra"),
-          date: new Date(now).toLocaleDateString("en-IN"),
-          time: new Date(now).toLocaleTimeString("en-IN"),
-          amount: delta,
-          type: delta >= 0 ? "Deposit" : "Withdrawal",
-          adminName: "System",
-          reason: delta >= 0 ? "Cashback for order" : "Order payment"
-        };
-
-        return {
-          ...entry,
-          auraPoints: nextAuraPoints,
-          totalSpent: Number(entry.totalSpent || 0) + totalSpent,
-          totalOrders: Number(entry.totalOrders || 0) + 1,
-          auraHistory: [transaction, ...(entry.auraHistory || [])]
-        };
-      })
-    );
   };
 
   const placeOrder = () => {
@@ -3986,6 +3956,7 @@ export default function App() {
                 <div key={`${banner.id}-${index}`} className="hero-media-banner__slide">
                   {bannerMediaType === "video" ? (
                     <video
+                      key={`video-${banner.id}-${index}-${bannerMediaSource}`}
                       src={bannerMediaSource}
                       autoPlay
                       loop
@@ -3996,6 +3967,7 @@ export default function App() {
                     />
                   ) : (
                     <img
+                      key={`image-${banner.id}-${index}-${bannerMediaSource}`}
                       src={bannerMediaSource}
                       alt={banner.title || `${siteName} banner ${index + 1}`}
                       className="hero-media-banner__asset"
@@ -6188,15 +6160,16 @@ export default function App() {
                             event,
                             async (dataUrl, file) => {
                               const nextMediaType = getFileMediaType(file) || bannerForm.mediaType;
+                              const nextMediaSource = resolveCloudinaryMediaUrl(dataUrl);
                               const nextAspectRatio = await getMediaAspectRatio(
-                                dataUrl,
+                                nextMediaSource,
                                 nextMediaType
                               );
 
                               setBannerForm((prev) => ({
                                 ...prev,
                                 mediaType: nextMediaType,
-                                mediaData: dataUrl,
+                                mediaData: nextMediaSource,
                                 aspectRatio: nextAspectRatio
                               }));
                             },
@@ -6249,6 +6222,7 @@ export default function App() {
                       >
                         {getBannerMediaType(bannerForm) === "video" ? (
                           <video
+                            key={`banner-form-video-${getBannerMediaSource(bannerForm)}`}
                             src={getBannerMediaSource(bannerForm)}
                             autoPlay
                             loop
@@ -6264,6 +6238,7 @@ export default function App() {
                           />
                         ) : (
                           <img
+                            key={`banner-form-image-${getBannerMediaSource(bannerForm)}`}
                             src={getBannerMediaSource(bannerForm)}
                             alt={bannerForm.title || "Homepage banner preview"}
                             style={{
@@ -6453,6 +6428,7 @@ export default function App() {
                             >
                               {getBannerMediaType(banner) === "video" ? (
                                 <video
+                                  key={`saved-banner-video-${banner.id}-${getBannerMediaSource(banner)}`}
                                   src={getBannerMediaSource(banner)}
                                   autoPlay
                                   loop
@@ -6467,6 +6443,7 @@ export default function App() {
                                 />
                               ) : (
                                 <img
+                                  key={`saved-banner-image-${banner.id}-${getBannerMediaSource(banner)}`}
                                   src={getBannerMediaSource(banner)}
                                   alt={banner.title}
                                   decoding="async"
