@@ -1157,6 +1157,22 @@ const getFileMediaType = (file) => {
   return "";
 };
 
+const getFirebaseProfilePhotoUrl = (firebaseUser) => {
+  if (!firebaseUser) {
+    return "";
+  }
+
+  const direct = String(firebaseUser.photoURL || "").trim();
+  if (direct) {
+    return direct;
+  }
+
+  const fromProvider = firebaseUser.providerData?.find((p) =>
+    String(p?.photoURL || "").trim()
+  );
+  return String(fromProvider?.photoURL || "").trim();
+};
+
 const getMediaAspectRatio = (mediaSrc, mediaType = "image") =>
   new Promise((resolve) => {
     const fallback = DEFAULT_BANNER_ASPECT_RATIO;
@@ -2115,7 +2131,7 @@ export default function App() {
         phone: existing?.phone || "",
         gender: existing?.gender || "",
         birthdate: existing?.birthdate || "",
-        photo: firebaseUser.photoURL || existing?.photo || "",
+        photo: getFirebaseProfilePhotoUrl(firebaseUser) || existing?.photo || "",
         role: ADMIN_EMAILS.includes(email) ? "admin" : "customer",
         status: "active",
         joinedAt: existing?.joinedAt || Date.now(),
@@ -4996,6 +5012,7 @@ export default function App() {
                     <img
                       src={user.photo}
                       alt={user.name}
+                      referrerPolicy="no-referrer"
                       style={{
                         width: "68px",
                         height: "68px",
@@ -7530,6 +7547,7 @@ export default function App() {
                       <img
                         src={user.photo}
                         alt={user.name}
+                        referrerPolicy="no-referrer"
                         style={{
                           width: "56px",
                           height: "56px",
