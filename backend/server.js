@@ -35,9 +35,10 @@ const imageUpload = multer({
 const app = express();
 
 const allowedOrigins = [
-  "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app",
-  "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app/"
+  "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app"
 ];
+
+const defaultAllowedOrigin = allowedOrigins[0];
 
 const isAllowedOrigin = (origin) => {
   const normalizedOrigin = String(origin || "").trim().replace(/\/$/, "");
@@ -142,14 +143,15 @@ const challenges = new Map();
 const userSessions = new Map();
 
 app.use((req, res, next) => {
-  const requestOrigin = req.headers.origin;
+  const requestOrigin = String(req.headers.origin || "").trim().replace(/\/$/, "");
+  const responseOrigin = isAllowedOrigin(requestOrigin)
+    ? requestOrigin
+    : defaultAllowedOrigin;
 
-  if (isAllowedOrigin(requestOrigin)) {
-    res.setHeader("Access-Control-Allow-Origin", requestOrigin);
-    res.setHeader("Vary", "Origin");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  }
+  res.setHeader("Access-Control-Allow-Origin", responseOrigin);
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
