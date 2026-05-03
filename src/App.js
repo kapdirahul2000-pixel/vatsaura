@@ -1,4 +1,4 @@
-import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { auth, db } from "./firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
@@ -8,36 +8,14 @@ import {
   signInWithPopup,
   signOut
 } from "firebase/auth";
-import {
-  completeAdminSetup,
-  fetchAdminSecurityStatus,
-  fetchAdminSession,
-  logoutAdminSession,
-  requestAdminSetupOtp,
-  sendAdminOtp,
-  startAdminLogin,
-  updateAdminPassword,
-  updateAdminPin,
-  updateAdminTwoFactor,
-  verifyAdminOtp,
-  verifyAdminPin,
-  verifyAdminSetupOtp
-} from "./adminSecurityApi";
 import brandHeaderVideo from "./brand-header-video.mp4";
 
-const DEFAULT_ADMIN_EMAILS = [
+const ADMIN_EMAILS = [
   "kapdirahul2000@gmail.com",
   "vatsaurateam@gmail.com"
 ];
 
-const ADMIN_EMAILS = [
-  ...String(process.env.REACT_APP_ADMIN_OWNER_EMAIL || "")
-    .split(",")
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean),
-  ...DEFAULT_ADMIN_EMAILS
-]
-  .filter((value, index, array) => value && array.indexOf(value) === index);
+const ADMIN_PANEL_PASSWORD = "Radheradhe@13";
 
 const STORAGE_KEYS = {
   cart: "vatsauraCart",
@@ -48,6 +26,10 @@ const STORAGE_KEYS = {
   settings: "vatsauraSettings",
   adminSession: "vatsauraAdminSession"
 };
+
+const CLOUDINARY_CLOUD_NAME = "dcm5dhh8e";
+const CLOUDINARY_UPLOAD_PRESET = "ml_default";
+const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`;
 
 const PERSISTENT_STORE_CONFIG = {
   dbName: "vatsauraStorefrontDb",
@@ -236,24 +218,24 @@ Your personal information is not sold to third parties. Payment and shipping inf
 By using this website, you agree that we may use your information for order management, service updates, and store operations.`;
 
 const defaultAdminSecurityStatus = {
-  needsSetup: true,
-  passwordConfigured: false,
+  needsSetup: false,
+  passwordConfigured: true,
   pinConfigured: false,
   otpPreferences: {
-    email: true,
+    email: false,
     sms: false
   },
   availableContactMethods: {
-    email: true,
+    email: false,
     sms: false
   },
   deliveryReady: {
-    email: true,
+    email: false,
     sms: false
   },
   contact: {
     emailMasked: "",
-    phoneMasked: ""
+    phoneMasked: "Not configured"
   }
 };
 
@@ -750,7 +732,6 @@ const normalizeBanner = (banner, index = 0) => {
     banner?.mediaType ||
     (mediaData ? (isVideoSource(mediaData) ? "video" : "image") : "video");
   const useDefaultCopy =
-    !rawTitle ||
     rawTitle.toLowerCase() === "homepage banner" ||
     /^banner \d+$/i.test(rawTitle);
 
@@ -1139,13 +1120,28 @@ const startOfMonth = () => {
   return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 };
 
-const fileToDataUrl = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+const uploadFileToCloudinary = async (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+
+  const response = await fetch(CLOUDINARY_UPLOAD_URL, {
+    method: "POST",
+    body: formData
   });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || !data.secure_url) {
+    const message =
+      (data && data.error && data.error.message) ||
+      (typeof data === "string" ? data : "") ||
+      "Cloudinary upload failed.";
+    throw new Error(message);
+  }
+
+  return data.secure_url;
+};
 
 const getFileMediaType = (file) => {
   const mimeType = String(file?.type || "").toLowerCase();
@@ -1161,11 +1157,11 @@ const getFileMediaType = (file) => {
   return "";
 };
 
-const getMediaAspectRatio = (dataUrl, mediaType = "image") =>
+const getMediaAspectRatio = (mediaSrc, mediaType = "image") =>
   new Promise((resolve) => {
     const fallback = DEFAULT_BANNER_ASPECT_RATIO;
 
-    if (!dataUrl) {
+    if (!mediaSrc) {
       resolve(fallback);
       return;
     }
@@ -1178,7 +1174,7 @@ const getMediaAspectRatio = (dataUrl, mediaType = "image") =>
       video.onloadedmetadata = () =>
         resolve(normalizeAspectRatio(video.videoWidth / video.videoHeight, fallback));
       video.onerror = () => resolve(fallback);
-      video.src = dataUrl;
+      video.src = mediaSrc;
       return;
     }
 
@@ -1186,7 +1182,7 @@ const getMediaAspectRatio = (dataUrl, mediaType = "image") =>
     image.onload = () =>
       resolve(normalizeAspectRatio(image.naturalWidth / image.naturalHeight, fallback));
     image.onerror = () => resolve(fallback);
-    image.src = dataUrl;
+    image.src = mediaSrc;
   });
 
 const iconProps = {
@@ -1424,27 +1420,13 @@ export default function App() {
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const [bannerTransitionEnabled, setBannerTransitionEnabled] = useState(true);
   const [searchSuggestionsOpen, setSearchSuggestionsOpen] = useState(false);
-  const [adminSecurityStatus, setAdminSecurityStatus] = useState(defaultAdminSecurityStatus);
-  const [adminSecurityLoading, setAdminSecurityLoading] = useState(false);
+  const adminSecurityStatus = defaultAdminSecurityStatus;
   const [adminSecurityError, setAdminSecurityError] = useState("");
   const [adminAuthStep, setAdminAuthStep] = useState("loginPassword");
-  const [adminChallengeId, setAdminChallengeId] = useState("");
-  const [adminAvailableOtpMethods, setAdminAvailableOtpMethods] = useState(["email"]);
   const [adminSessionToken, setAdminSessionToken] = useState(() =>
     readSessionValue(STORAGE_KEYS.adminSession, "")
   );
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
-  const [adminSetupForm, setAdminSetupForm] = useState({
-    email: frontendAdminEmail,
-    otpMethod: "email",
-    otpCode: "",
-    password: "",
-    confirmPassword: "",
-    pin: "",
-    confirmPin: "",
-    enableEmailOtp: true,
-    enableSmsOtp: false
-  });
   const [adminLoginForm, setAdminLoginForm] = useState({
     email: frontendAdminEmail,
     password: "",
@@ -1501,8 +1483,6 @@ export default function App() {
   const isAdminOwner = Boolean(userEmail) && ADMIN_EMAILS.includes(userEmail);
   const isAdmin = isAdminOwner && hasAdminAccess;
   const activeAdminEmail = isAdminOwner ? userEmail : frontendAdminEmail;
-  const configuredAdminAccountsLabel =
-    ADMIN_EMAILS.length > 0 ? ADMIN_EMAILS.join(", ") : "not configured";
   const currentUserRecord = useMemo(() => 
     users.find((entry) => entry.email?.toLowerCase() === userEmail),
     [users, userEmail]
@@ -1670,14 +1650,6 @@ export default function App() {
       return;
     }
 
-    setAdminSetupForm((prev) =>
-      prev.email === activeAdminEmail
-        ? prev
-        : {
-            ...prev,
-            email: activeAdminEmail
-          }
-    );
     setAdminLoginForm((prev) =>
       prev.email === activeAdminEmail
         ? prev
@@ -1986,10 +1958,28 @@ export default function App() {
 
     setHasAdminAccess(false);
     setAdminSecurityError("");
-    setAdminChallengeId("");
     setAdminSessionToken("");
     setAdminAuthStep("loginPassword");
   }, [isAdminOwner]);
+
+  useEffect(() => {
+    if (!isAdminOwner || !userEmail) {
+      return;
+    }
+
+    const storedUnlock = readSessionValue(STORAGE_KEYS.adminSession, "");
+
+    if (storedUnlock && storedUnlock === userEmail) {
+      startTransition(() => {
+        setAdminSessionToken(userEmail);
+        setHasAdminAccess(true);
+        setAdminAuthStep("authenticated");
+      });
+    } else if (storedUnlock && storedUnlock !== userEmail) {
+      writeSessionValue(STORAGE_KEYS.adminSession, "");
+      setAdminSessionToken("");
+    }
+  }, [isAdminOwner, userEmail]);
 
   useEffect(() => {
     if (!selectedProduct) {
@@ -2267,433 +2257,52 @@ export default function App() {
     setSearchSuggestionsOpen(false);
   };
 
-  const applyAdminSecurityStatus = useCallback((status) => {
-    const nextStatus = {
-      ...defaultAdminSecurityStatus,
-      ...status,
-      otpPreferences: {
-        ...defaultAdminSecurityStatus.otpPreferences,
-        ...(status?.otpPreferences || {})
-      },
-      availableContactMethods: {
-        ...defaultAdminSecurityStatus.availableContactMethods,
-        ...(status?.availableContactMethods || {})
-      },
-      deliveryReady: {
-        ...defaultAdminSecurityStatus.deliveryReady,
-        ...(status?.deliveryReady || {})
-      },
-      contact: {
-        ...defaultAdminSecurityStatus.contact,
-        ...(status?.contact || {})
-      }
-    };
+  const submitAdminPassword = () => {
+    setAdminSecurityError("");
 
-    const preferredSetupMethod = nextStatus.availableContactMethods.email
-      ? "email"
-      : nextStatus.availableContactMethods.sms
-        ? "sms"
-        : "email";
-    const preferredOtpMethod =
-      nextStatus.otpPreferences.email && nextStatus.availableContactMethods.email
-        ? "email"
-        : nextStatus.otpPreferences.sms && nextStatus.availableContactMethods.sms
-          ? "sms"
-          : preferredSetupMethod;
+    if (adminLoginForm.password !== ADMIN_PANEL_PASSWORD) {
+      setAdminSecurityError("Incorrect password");
+      return;
+    }
 
-    setAdminSecurityStatus(nextStatus);
-    setAdminAvailableOtpMethods(
-      ["email", "sms"].filter(
-        (method) =>
-          nextStatus.otpPreferences?.[method] &&
-          nextStatus.availableContactMethods?.[method]
-      )
-    );
-    setAdminSetupForm((prev) => ({
-      ...prev,
-      email: activeAdminEmail,
-      otpMethod:
-        nextStatus.availableContactMethods?.[prev.otpMethod] ? prev.otpMethod : preferredSetupMethod,
-      enableEmailOtp: nextStatus.otpPreferences.email,
-      enableSmsOtp: nextStatus.otpPreferences.sms
-    }));
-    setAdminLoginForm((prev) => ({
-      ...prev,
-      email: activeAdminEmail,
-      otpMethod: preferredOtpMethod
-    }));
-    setAdminSecurityForm((prev) => ({
-      ...prev,
-      enableEmailOtp: nextStatus.otpPreferences.email,
-      enableSmsOtp: nextStatus.otpPreferences.sms
-    }));
-  }, [activeAdminEmail]);
-
-  const resetAdminChallengeState = (nextStep) => {
-    setAdminChallengeId("");
-    setAdminAvailableOtpMethods(["email"]);
+    setAdminSessionToken(userEmail);
+    writeSessionValue(STORAGE_KEYS.adminSession, userEmail);
+    setHasAdminAccess(true);
+    setAdminAuthStep("authenticated");
     setAdminLoginForm((prev) => ({
       ...prev,
       password: "",
       pin: "",
       otpCode: ""
     }));
-    setAdminSetupForm((prev) => ({
-      ...prev,
-      otpCode: "",
-      password: "",
-      confirmPassword: "",
-      pin: "",
-      confirmPin: ""
-    }));
+    setToast("Admin panel unlocked.");
+    navigateTo("admin");
+  };
 
-    if (nextStep) {
-      setAdminAuthStep(nextStep);
-    }
-
+  const endAdminSession = () => {
     resetSearchUi();
-  };
-
-  const startAdminSetupFlow = async () => {
-    if (!adminSetupForm.email.trim() || !ADMIN_EMAILS.includes(adminSetupForm.email.trim().toLowerCase())) {
-      setAdminSecurityError("Login with a configured admin email before initializing admin security.");
-      return;
-    }
-
-    setAdminSecurityLoading(true);
+    setHasAdminAccess(false);
+    setAdminSessionToken("");
+    writeSessionValue(STORAGE_KEYS.adminSession, "");
+    setAdminAuthStep("loginPassword");
     setAdminSecurityError("");
-
-    try {
-      const response = await requestAdminSetupOtp({
-        email: adminSetupForm.email.trim().toLowerCase(),
-        method: adminSetupForm.otpMethod
-      });
-
-      setAdminChallengeId(response.challengeId);
-      setAdminAuthStep("setupVerifyOtp");
-      setToast(`OTP sent to ${response.contact}.`);
-    } catch (error) {
-      setAdminSecurityError(error.message || "Unable to send setup OTP.");
-    } finally {
-      setAdminSecurityLoading(false);
-    }
+    setToast("Admin session locked.");
   };
 
-  const verifyAdminSetupCode = async () => {
-    if (!adminSetupForm.otpCode.trim()) {
-      setAdminSecurityError("Enter the OTP sent to the admin contact.");
-      return;
-    }
-
-    setAdminSecurityLoading(true);
+  const saveAdminPasswordSettings = () => {
     setAdminSecurityError("");
-
-    try {
-      await verifyAdminSetupOtp({
-        challengeId: adminChallengeId,
-        otp: adminSetupForm.otpCode.trim()
-      });
-
-      setAdminAuthStep("setupCredentials");
-      setToast("Admin contact verified.");
-    } catch (error) {
-      setAdminSecurityError(error.message || "Unable to verify setup OTP.");
-    } finally {
-      setAdminSecurityLoading(false);
-    }
+    setToast("Admin password is set in the app code. Change ADMIN_PANEL_PASSWORD in App.js to update it.");
   };
 
-  const completeAdminSetupFlow = async () => {
-    if (adminSetupForm.password !== adminSetupForm.confirmPassword) {
-      setAdminSecurityError("Password confirmation does not match.");
-      return;
-    }
-
-    if (adminSetupForm.pin !== adminSetupForm.confirmPin) {
-      setAdminSecurityError("PIN confirmation does not match.");
-      return;
-    }
-
-    if (!adminSetupForm.password.trim() && !adminSetupForm.pin.trim()) {
-      setAdminSecurityError("Set at least one admin sign-in method.");
-      return;
-    }
-
-    setAdminSecurityLoading(true);
+  const saveAdminPinSettings = () => {
     setAdminSecurityError("");
-
-    try {
-      const response = await completeAdminSetup({
-        challengeId: adminChallengeId,
-        password: adminSetupForm.password,
-        pin: adminSetupForm.pin,
-        enableEmailOtp: adminSetupForm.enableEmailOtp,
-        enableSmsOtp: adminSetupForm.enableSmsOtp
-      });
-
-      setAdminSessionToken(response.token);
-      setHasAdminAccess(true);
-      applyAdminSecurityStatus(response.securityStatus);
-      resetAdminChallengeState("authenticated");
-      setToast("Admin security is now active.");
-    } catch (error) {
-      setAdminSecurityError(error.message || "Unable to finish admin setup.");
-    } finally {
-      setAdminSecurityLoading(false);
-    }
+    setToast("PIN sign-in is disabled.");
   };
 
-  const submitAdminPassword = async () => {
-    setAdminSecurityLoading(true);
+  const saveAdminTwoFactorSettings = () => {
     setAdminSecurityError("");
-
-    try {
-      const response = await startAdminLogin({
-        email: adminLoginForm.email.trim().toLowerCase(),
-        password: adminLoginForm.password
-      });
-
-      setAdminChallengeId(response.challengeId);
-      setAdminAvailableOtpMethods(
-        response.availableOtpMethods?.length > 0 ? response.availableOtpMethods : ["email"]
-      );
-      setAdminAuthStep(response.requiresPin ? "loginPin" : "loginOtpMethod");
-      setToast("Primary password verified.");
-    } catch (error) {
-      setAdminSecurityError(error.message || "Unable to verify admin password.");
-    } finally {
-      setAdminSecurityLoading(false);
-    }
+    setToast("Email and SMS OTP are disabled.");
   };
-
-  const submitAdminPin = async () => {
-    setAdminSecurityLoading(true);
-    setAdminSecurityError("");
-
-    try {
-      const response = await verifyAdminPin({
-        challengeId: adminChallengeId,
-        pin: adminLoginForm.pin
-      });
-
-      if (response.availableOtpMethods?.length > 0) {
-        setAdminAvailableOtpMethods(response.availableOtpMethods);
-        setAdminLoginForm((prev) => ({
-          ...prev,
-          otpMethod: response.availableOtpMethods[0]
-        }));
-      }
-
-      setAdminAuthStep("loginOtpMethod");
-      setToast("PIN verified.");
-    } catch (error) {
-      setAdminSecurityError(error.message || "Unable to verify admin PIN.");
-    } finally {
-      setAdminSecurityLoading(false);
-    }
-  };
-
-  const requestAdminLoginOtp = async () => {
-    setAdminSecurityLoading(true);
-    setAdminSecurityError("");
-
-    try {
-      const response = await sendAdminOtp({
-        challengeId: adminChallengeId,
-        method: adminLoginForm.otpMethod
-      });
-
-      setAdminAuthStep("loginOtp");
-      setToast(`OTP sent to ${response.contact}.`);
-    } catch (error) {
-      setAdminSecurityError(error.message || "Unable to send admin OTP.");
-    } finally {
-      setAdminSecurityLoading(false);
-    }
-  };
-
-  const completeAdminLoginFlow = async () => {
-    setAdminSecurityLoading(true);
-    setAdminSecurityError("");
-
-    try {
-      const response = await verifyAdminOtp({
-        challengeId: adminChallengeId,
-        otp: adminLoginForm.otpCode.trim()
-      });
-
-      setAdminSessionToken(response.token);
-      setHasAdminAccess(true);
-      applyAdminSecurityStatus(response.securityStatus);
-      resetAdminChallengeState("authenticated");
-      resetSearchUi();
-      setToast("Admin panel unlocked.");
-    } catch (error) {
-      setAdminSecurityError(error.message || "Unable to verify admin OTP.");
-    } finally {
-      setAdminSecurityLoading(false);
-    }
-  };
-
-  const endAdminSession = async () => {
-    resetSearchUi();
-    try {
-      if (adminSessionToken) {
-        await logoutAdminSession(adminSessionToken);
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setHasAdminAccess(false);
-      setAdminSessionToken("");
-      resetAdminChallengeState(adminSecurityStatus.needsSetup ? "setupRequestOtp" : "loginPassword");
-      setToast("Admin session locked.");
-    }
-  };
-
-  const saveAdminPasswordSettings = async () => {
-    if (adminSecurityForm.nextPassword !== adminSecurityForm.confirmNextPassword) {
-      setAdminSecurityError("New password confirmation does not match.");
-      return;
-    }
-
-    setAdminSecurityLoading(true);
-    setAdminSecurityError("");
-
-    try {
-      const response = await updateAdminPassword(adminSessionToken, {
-        currentPassword: adminSecurityForm.currentPassword,
-        nextPassword: adminSecurityForm.nextPassword
-      });
-
-      applyAdminSecurityStatus(response.securityStatus);
-      setAdminSecurityForm((prev) => ({
-        ...prev,
-        currentPassword: "",
-        nextPassword: "",
-        confirmNextPassword: ""
-      }));
-      setToast("Admin password updated.");
-    } catch (error) {
-      setAdminSecurityError(error.message || "Unable to update admin password.");
-    } finally {
-      setAdminSecurityLoading(false);
-    }
-  };
-
-  const saveAdminPinSettings = async () => {
-    if (adminSecurityForm.nextPin !== adminSecurityForm.confirmNextPin) {
-      setAdminSecurityError("New PIN confirmation does not match.");
-      return;
-    }
-
-    setAdminSecurityLoading(true);
-    setAdminSecurityError("");
-
-    try {
-      const response = await updateAdminPin(adminSessionToken, {
-        currentPin: adminSecurityForm.currentPin,
-        nextPin: adminSecurityForm.nextPin
-      });
-
-      applyAdminSecurityStatus(response.securityStatus);
-      setAdminSecurityForm((prev) => ({
-        ...prev,
-        currentPin: "",
-        nextPin: "",
-        confirmNextPin: ""
-      }));
-      setToast(response.securityStatus?.pinConfigured ? "Admin PIN updated." : "Admin PIN removed.");
-    } catch (error) {
-      setAdminSecurityError(error.message || "Unable to update admin PIN.");
-    } finally {
-      setAdminSecurityLoading(false);
-    }
-  };
-
-  const saveAdminTwoFactorSettings = async () => {
-    setAdminSecurityLoading(true);
-    setAdminSecurityError("");
-
-    try {
-      const response = await updateAdminTwoFactor(adminSessionToken, {
-        enableEmailOtp: adminSecurityForm.enableEmailOtp,
-        enableSmsOtp: adminSecurityForm.enableSmsOtp
-      });
-
-      applyAdminSecurityStatus(response.securityStatus);
-      setToast("Two-factor delivery settings updated.");
-    } catch (error) {
-      setAdminSecurityError(error.message || "Unable to update two-factor settings.");
-    } finally {
-      setAdminSecurityLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (activePage !== "admin" || !isAdminOwner) {
-      return;
-    }
-
-    let active = true;
-
-    const syncAdminSecurity = async () => {
-      setAdminSecurityLoading(true);
-      setAdminSecurityError("");
-
-      try {
-        const status = await fetchAdminSecurityStatus();
-
-        if (!active) {
-          return;
-        }
-
-        applyAdminSecurityStatus(status);
-
-        if (!adminSessionToken) {
-          setHasAdminAccess(false);
-          setAdminAuthStep(status.needsSetup ? "setupRequestOtp" : "loginPassword");
-          return;
-        }
-
-        try {
-          const sessionResponse = await fetchAdminSession(adminSessionToken);
-
-          if (!active) {
-            return;
-          }
-
-          applyAdminSecurityStatus(sessionResponse.securityStatus || status);
-          setHasAdminAccess(true);
-          setAdminAuthStep("authenticated");
-        } catch (error) {
-          if (!active) {
-            return;
-          }
-
-          setHasAdminAccess(false);
-          setAdminSessionToken("");
-          setAdminAuthStep(status.needsSetup ? "setupRequestOtp" : "loginPassword");
-        }
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-
-        setAdminSecurityError(error.message || "Unable to load admin security.");
-      } finally {
-        if (active) {
-          setAdminSecurityLoading(false);
-        }
-      }
-    };
-
-    syncAdminSecurity();
-
-    return () => {
-      active = false;
-    };
-  }, [activePage, isAdminOwner, adminSessionToken, applyAdminSecurityStatus]);
 
   useEffect(() => {
     if (!user || isEditingProfile) {
@@ -3586,11 +3195,6 @@ export default function App() {
   };
 
   const saveBanner = () => {
-    if (!bannerForm.title.trim()) {
-      setToast("Enter banner title.");
-      return;
-    }
-
     if (!String(bannerForm.mediaData || "").trim()) {
       setToast("Upload banner media.");
       return;
@@ -3930,7 +3534,7 @@ export default function App() {
     }
 
     try {
-      const uploads = await Promise.all(files.map((file) => fileToDataUrl(file)));
+      const uploads = await Promise.all(files.map((file) => uploadFileToCloudinary(file)));
       await Promise.resolve(
         onDone(multiple ? uploads : uploads[0], multiple ? files : files[0])
       );
@@ -5520,7 +5124,7 @@ export default function App() {
         <div style={cardStyle}>
           <h2 style={{ marginTop: 0 }}>Admin Security</h2>
           <p style={{ color: tone.muted, lineHeight: 1.8 }}>
-            Admin access is locked behind a server-side password, optional PIN, and OTP verification for the configured admin contact.
+            Admin access requires Google sign-in with an authorized email, then the admin password (verified on this device).
           </p>
 
           {!user && (
@@ -5542,20 +5146,6 @@ export default function App() {
 
           {user && isAdminOwner && (
             <div style={{ display: "grid", gap: "14px" }}>
-              {adminSecurityError && (
-                <div
-                  style={{
-                    border: `1px solid ${tone.border}`,
-                    borderRadius: "14px",
-                    padding: "12px 14px",
-                    background: tone.soft,
-                    color: tone.body
-                  }}
-                >
-                  {adminSecurityError}
-                </div>
-              )}
-
               <div
                 style={{
                   display: "grid",
@@ -5567,180 +5157,12 @@ export default function App() {
                 }}
               >
                 <p style={{ margin: 0, color: tone.muted }}>
-                  Admin OTP email: {adminSecurityStatus.contact.emailMasked || frontendAdminEmail}
+                  Signed in as: {activeAdminEmail || frontendAdminEmail}
                 </p>
                 <p style={{ margin: 0, color: tone.muted }}>
-                  Admin OTP mobile: {adminSecurityStatus.contact.phoneMasked || "Not configured"}
+                  Enter the admin password to unlock this browser session.
                 </p>
               </div>
-
-              {adminAuthStep === "setupRequestOtp" && (
-                <div style={{ display: "grid", gap: "12px" }}>
-                  <h3 style={{ margin: 0 }}>Initialize Password, PIN, and OTP</h3>
-                  <input
-                    value={adminSetupForm.email}
-                    readOnly
-                    placeholder="Admin email"
-                    style={inputStyle}
-                  />
-                  <select
-                    value={adminSetupForm.otpMethod}
-                    onChange={(event) =>
-                      setAdminSetupForm((prev) => ({ ...prev, otpMethod: event.target.value }))
-                    }
-                    style={selectStyle}
-                  >
-                    {adminSecurityStatus.availableContactMethods.email && (
-                      <option value="email">Send OTP to email</option>
-                    )}
-                    {adminSecurityStatus.availableContactMethods.sms && (
-                      <option value="sms">Send OTP to mobile</option>
-                    )}
-                  </select>
-                  <button
-                    onClick={startAdminSetupFlow}
-                    style={primaryButtonStyle}
-                    disabled={adminSecurityLoading}
-                  >
-                    {adminSecurityLoading ? "Sending..." : "Send Setup OTP"}
-                  </button>
-                </div>
-              )}
-
-              {adminAuthStep === "setupVerifyOtp" && (
-                <div style={{ display: "grid", gap: "12px" }}>
-                  <h3 style={{ margin: 0 }}>Verify Setup OTP</h3>
-                  <input
-                    value={adminSetupForm.otpCode}
-                    onChange={(event) =>
-                      setAdminSetupForm((prev) => ({ ...prev, otpCode: event.target.value }))
-                    }
-                    placeholder="Enter OTP"
-                    style={inputStyle}
-                  />
-                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                    <button
-                      onClick={verifyAdminSetupCode}
-                      style={primaryButtonStyle}
-                      disabled={adminSecurityLoading}
-                    >
-                      {adminSecurityLoading ? "Verifying..." : "Verify OTP"}
-                    </button>
-                    <button
-                      onClick={startAdminSetupFlow}
-                      style={secondaryButtonStyle}
-                      disabled={adminSecurityLoading}
-                    >
-                      Resend OTP
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {adminAuthStep === "setupCredentials" && (
-                <div style={{ display: "grid", gap: "12px" }}>
-                  <h3 style={{ margin: 0 }}>Create Password and PIN</h3>
-                  <input
-                    type="password"
-                    value={adminSetupForm.password}
-                    onChange={(event) =>
-                      setAdminSetupForm((prev) => ({ ...prev, password: event.target.value }))
-                    }
-                    placeholder="Admin password"
-                    autoComplete="new-password"
-                    style={inputStyle}
-                  />
-                  <input
-                    type="password"
-                    value={adminSetupForm.confirmPassword}
-                    onChange={(event) =>
-                      setAdminSetupForm((prev) => ({
-                        ...prev,
-                        confirmPassword: event.target.value
-                      }))
-                    }
-                    placeholder="Confirm password"
-                    autoComplete="new-password"
-                    style={inputStyle}
-                  />
-                  <input
-                    type="password"
-                    value={adminSetupForm.pin}
-                    onChange={(event) =>
-                      setAdminSetupForm((prev) => ({ ...prev, pin: event.target.value }))
-                    }
-                    placeholder="Optional PIN (4-8 digits)"
-                    autoComplete="new-password"
-                    style={inputStyle}
-                  />
-                  <input
-                    type="password"
-                    value={adminSetupForm.confirmPin}
-                    onChange={(event) =>
-                      setAdminSetupForm((prev) => ({
-                        ...prev,
-                        confirmPin: event.target.value
-                      }))
-                    }
-                    placeholder="Confirm PIN"
-                    autoComplete="new-password"
-                    style={inputStyle}
-                  />
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "12px",
-                      border: `1px solid ${tone.line}`,
-                      borderRadius: "14px",
-                      padding: "12px 14px"
-                    }}
-                  >
-                    <span>Email authenticator OTP</span>
-                    <input
-                      type="checkbox"
-                      checked={adminSetupForm.enableEmailOtp}
-                      onChange={(event) =>
-                        setAdminSetupForm((prev) => ({
-                          ...prev,
-                          enableEmailOtp: event.target.checked
-                        }))
-                      }
-                    />
-                  </label>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "12px",
-                      border: `1px solid ${tone.line}`,
-                      borderRadius: "14px",
-                      padding: "12px 14px"
-                    }}
-                  >
-                    <span>Mobile OTP</span>
-                    <input
-                      type="checkbox"
-                      checked={adminSetupForm.enableSmsOtp}
-                      onChange={(event) =>
-                        setAdminSetupForm((prev) => ({
-                          ...prev,
-                          enableSmsOtp: event.target.checked
-                        }))
-                      }
-                    />
-                  </label>
-                  <button
-                    onClick={completeAdminSetupFlow}
-                    style={primaryButtonStyle}
-                    disabled={adminSecurityLoading}
-                  >
-                    {adminSecurityLoading ? "Saving..." : "Save Admin Security"}
-                  </button>
-                </div>
-              )}
 
               {adminAuthStep === "loginPassword" && (
                 <div style={{ display: "grid", gap: "12px" }}>
@@ -5755,99 +5177,20 @@ export default function App() {
                   <input
                     type="password"
                     value={adminLoginForm.password}
-                    onChange={(event) =>
-                      setAdminLoginForm((prev) => ({ ...prev, password: event.target.value }))
-                    }
+                    onChange={(event) => {
+                      setAdminSecurityError("");
+                      setAdminLoginForm((prev) => ({ ...prev, password: event.target.value }));
+                    }}
                     placeholder="Admin password"
                     autoComplete="current-password"
                     style={inputStyle}
                   />
-                  <button
-                    onClick={submitAdminPassword}
-                    style={primaryButtonStyle}
-                    disabled={adminSecurityLoading}
-                  >
-                    {adminSecurityLoading ? "Checking..." : "Verify Password"}
+                  {adminSecurityError ? (
+                    <p style={{ margin: 0, color: "#c62828", fontSize: "14px" }}>{adminSecurityError}</p>
+                  ) : null}
+                  <button onClick={submitAdminPassword} style={primaryButtonStyle}>
+                    Verify Password
                   </button>
-                </div>
-              )}
-
-              {adminAuthStep === "loginPin" && (
-                <div style={{ display: "grid", gap: "12px" }}>
-                  <h3 style={{ margin: 0 }}>PIN Lock</h3>
-                  <input
-                    type="password"
-                    value={adminLoginForm.pin}
-                    onChange={(event) =>
-                      setAdminLoginForm((prev) => ({ ...prev, pin: event.target.value }))
-                    }
-                    placeholder="Enter PIN"
-                    autoComplete="current-password"
-                    style={inputStyle}
-                  />
-                  <button
-                    onClick={submitAdminPin}
-                    style={primaryButtonStyle}
-                    disabled={adminSecurityLoading}
-                  >
-                    {adminSecurityLoading ? "Checking..." : "Verify PIN"}
-                  </button>
-                </div>
-              )}
-
-              {adminAuthStep === "loginOtpMethod" && (
-                <div style={{ display: "grid", gap: "12px" }}>
-                  <h3 style={{ margin: 0 }}>Choose OTP Delivery</h3>
-                  <select
-                    value={adminLoginForm.otpMethod}
-                    onChange={(event) =>
-                      setAdminLoginForm((prev) => ({ ...prev, otpMethod: event.target.value }))
-                    }
-                    style={selectStyle}
-                  >
-                    {adminAvailableOtpMethods.map((method) => (
-                      <option key={method} value={method}>
-                        {method === "email" ? "Email authenticator OTP" : "Mobile OTP"}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={requestAdminLoginOtp}
-                    style={primaryButtonStyle}
-                    disabled={adminSecurityLoading}
-                  >
-                    {adminSecurityLoading ? "Sending..." : "Send OTP"}
-                  </button>
-                </div>
-              )}
-
-              {adminAuthStep === "loginOtp" && (
-                <div style={{ display: "grid", gap: "12px" }}>
-                  <h3 style={{ margin: 0 }}>Verify OTP</h3>
-                  <input
-                    value={adminLoginForm.otpCode}
-                    onChange={(event) =>
-                      setAdminLoginForm((prev) => ({ ...prev, otpCode: event.target.value }))
-                    }
-                    placeholder="Enter OTP"
-                    style={inputStyle}
-                  />
-                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                    <button
-                      onClick={completeAdminLoginFlow}
-                      style={primaryButtonStyle}
-                      disabled={adminSecurityLoading}
-                    >
-                      {adminSecurityLoading ? "Verifying..." : "Unlock Admin Panel"}
-                    </button>
-                    <button
-                      onClick={requestAdminLoginOtp}
-                      style={secondaryButtonStyle}
-                      disabled={adminSecurityLoading}
-                    >
-                      Resend OTP
-                    </button>
-                  </div>
                 </div>
               )}
             </div>
@@ -5890,7 +5233,7 @@ export default function App() {
           <aside className="admin-panel-card" style={cardStyle}>
             <h2 style={{ marginTop: 0 }}>Admin Panel</h2>
             <p style={{ marginTop: 0, color: tone.muted }}>
-              Protected by Google login, hashed password, optional PIN lock, and OTP verification.
+              Protected by Google login and a shared admin password verified in the browser.
             </p>
             <div style={{ display: "grid", gap: "10px" }}>
               {adminTabs.map((tab) => (
@@ -7519,7 +6862,7 @@ export default function App() {
                     <div>
                       <h3 style={{ margin: "0 0 6px" }}>Admin Security</h3>
                       <p style={{ margin: 0, color: tone.muted }}>
-                        Manage the hashed admin password, optional PIN lock, and OTP delivery preferences kept on the server.
+                        Admin sign-in uses Google plus a fixed password in App.js. PIN and OTP are not used.
                       </p>
                     </div>
 
@@ -7584,11 +6927,7 @@ export default function App() {
                         placeholder="Confirm new password"
                         style={inputStyle}
                       />
-                      <button
-                        onClick={saveAdminPasswordSettings}
-                        style={secondaryButtonStyle}
-                        disabled={adminSecurityLoading}
-                      >
+                      <button onClick={saveAdminPasswordSettings} style={secondaryButtonStyle}>
                         Update Password
                       </button>
                     </div>
@@ -7630,11 +6969,7 @@ export default function App() {
                         placeholder="Confirm new PIN"
                         style={inputStyle}
                       />
-                      <button
-                        onClick={saveAdminPinSettings}
-                        style={secondaryButtonStyle}
-                        disabled={adminSecurityLoading}
-                      >
+                      <button onClick={saveAdminPinSettings} style={secondaryButtonStyle}>
                         Save PIN
                       </button>
                     </div>
@@ -7688,11 +7023,7 @@ export default function App() {
                           }
                         />
                       </label>
-                      <button
-                        onClick={saveAdminTwoFactorSettings}
-                        style={secondaryButtonStyle}
-                        disabled={adminSecurityLoading}
-                      >
+                      <button onClick={saveAdminTwoFactorSettings} style={secondaryButtonStyle}>
                         Save OTP Preferences
                       </button>
                     </div>
