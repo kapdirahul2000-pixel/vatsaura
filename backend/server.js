@@ -34,33 +34,15 @@ const imageUpload = multer({
 
 const app = express();
 
-const parseOriginList = (value) =>
-  String(value || "")
-    .split(",")
-    .map((entry) => entry.trim().replace(/\/$/, ""))
-    .filter(Boolean);
-
 const allowedOrigins = [
-  ...parseOriginList(process.env.CLIENT_ORIGINS || process.env.CLIENT_ORIGIN),
   "http://localhost:3000",
-  "http://127.0.0.1:3000",
-  "https://vatsaura.onrender.com",
-  "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app"
-].filter((entry, index, array) => entry && array.indexOf(entry) === index);
-
-const isAllowedOrigin = (origin) => {
-  const normalizedOrigin = String(origin || "").trim().replace(/\/$/, "");
-
-  return (
-    allowedOrigins.includes(normalizedOrigin) ||
-    /^https:\/\/[a-z0-9-]+\.onrender\.com$/i.test(normalizedOrigin) ||
-    /^https:\/\/vatsaura.*\.vercel\.app$/i.test(normalizedOrigin)
-  );
-};
+  "https://vatsaura.in",
+  "https://www.vatsaura.in"
+];
 
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin || isAllowedOrigin(origin)) {
+    if (!origin || allowedOrigins.includes(String(origin).replace(/\/$/, ""))) {
       callback(null, true);
       return;
     }
