@@ -33,6 +33,7 @@ const CLOUDINARY_UPLOAD_PRESET = "ml_default";
 const CLOUDINARY_UPLOAD_BASE = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}`;
 const CLOUDINARY_BASE = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}`;
 const RAZORPAY_CHECKOUT_URL = "https://checkout.razorpay.com/v1/checkout.js";
+const COD_CHARGE = 100;
 let razorpayCheckoutPromise;
 
 const loadRazorpayCheckout = () => {
@@ -141,6 +142,18 @@ const paymentCatalog = [
     title: "Aura Points",
     description: "Pay using the wallet balance stored on the account"
   }
+];
+
+const publicAssetBase = process.env.PUBLIC_URL || "";
+const paymentAssetPath = (fileName) => `${publicAssetBase}/payment-icons/${fileName}`;
+const razorpayLogoSrc = paymentAssetPath("razorpay-icon.webp");
+const acceptedPaymentLogos = [
+  { name: "UPI", src: paymentAssetPath("upi.svg") },
+  { name: "Visa", src: paymentAssetPath("visa.svg") },
+  { name: "Mastercard", src: paymentAssetPath("mastercard.svg") },
+  { name: "RuPay", src: paymentAssetPath("rupay.svg") },
+  { name: "Paytm", src: paymentAssetPath("paytm.svg") },
+  { name: "PhonePe", src: paymentAssetPath("phonepe.svg") }
 ];
 
 const sortOptions = [
@@ -322,6 +335,11 @@ We collect only the basic details needed to process orders, deliveries, customer
 Your personal information is not sold to third parties. Payment and shipping information may be shared only with trusted service partners when required to complete your order safely and smoothly.
 
 By using this website, you agree that we may use your information for order management, service updates, and store operations.`;
+
+const DEFAULT_CONTACT_EMAIL = "vatsaurateam@gmail.com";
+
+const DEFAULT_ABOUT_US =
+  "Vatsaura is built for premium spiritual streetwear, made for people who want their beliefs and everyday style to feel connected.";
 
 const defaultAdminSecurityStatus = {
   needsSetup: false,
@@ -515,7 +533,9 @@ const defaultSettings = {
   ],
   offers: [],
   termsAndConditions: DEFAULT_TERMS_AND_CONDITIONS,
-  privacyPolicy: DEFAULT_PRIVACY_POLICY
+  privacyPolicy: DEFAULT_PRIVACY_POLICY,
+  contactEmail: DEFAULT_CONTACT_EMAIL,
+  aboutUs: DEFAULT_ABOUT_US
 };
 
 const tone = {
@@ -944,6 +964,14 @@ const normalizeSettingsState = (storedSettings) => {
       safeSettings.privacyPolicy.trim()
         ? safeSettings.privacyPolicy
         : defaultSettings.privacyPolicy,
+    contactEmail:
+      typeof safeSettings.contactEmail === "string" && safeSettings.contactEmail.trim()
+        ? safeSettings.contactEmail
+        : defaultSettings.contactEmail,
+    aboutUs:
+      typeof safeSettings.aboutUs === "string" && safeSettings.aboutUs.trim()
+        ? safeSettings.aboutUs
+        : defaultSettings.aboutUs,
     paymentMethods: {
       ...defaultSettings.paymentMethods,
       ...(safeSettings.paymentMethods || {})
@@ -1527,6 +1555,8 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [activePage, setActivePage] = useState("home");
   const [history, setHistory] = useState([]);
+  const activePageRef = useRef(activePage);
+  const pageHistoryRef = useRef(history);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showTshirtMenu, setShowTshirtMenu] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState("all");
@@ -1545,7 +1575,9 @@ export default function App() {
   const [offerForm, setOfferForm] = useState(emptyOfferForm);
   const [policyForm, setPolicyForm] = useState({
     termsAndConditions: defaultSettings.termsAndConditions,
-    privacyPolicy: defaultSettings.privacyPolicy
+    privacyPolicy: defaultSettings.privacyPolicy,
+    contactEmail: defaultSettings.contactEmail,
+    aboutUs: defaultSettings.aboutUs
   });
   const [selectedAdminOrderId, setSelectedAdminOrderId] = useState("");
   const [categoryDraft, setCategoryDraft] = useState("");
@@ -1610,6 +1642,7 @@ export default function App() {
   const tshirtRef = useRef(null);
   const searchRef = useRef(null);
   const searchInputRef = useRef(null);
+  const productMediaTouchRef = useRef(null);
   const bannerResetTimerRef = useRef(null);
   const activeBannerIndexRef = useRef(0);
   const persistentSaveTimerRef = useRef(null);
@@ -1628,6 +1661,8 @@ export default function App() {
   const storeTermsAndConditions =
     settings.termsAndConditions || defaultSettings.termsAndConditions;
   const storePrivacyPolicy = settings.privacyPolicy || defaultSettings.privacyPolicy;
+  const storeContactEmail = settings.contactEmail || defaultSettings.contactEmail;
+  const storeAboutUs = settings.aboutUs || defaultSettings.aboutUs;
   const managedTshirtCategories = useMemo(() => sanitizeTshirtCategories(settings.tshirtCategories), [settings.tshirtCategories]);
   const selectedProduct = useMemo(() => products.find((item) => item.id === selectedProductId) || null, [products, selectedProductId]);
   const enabledPaymentOptions = useMemo(() => paymentCatalog.filter(
@@ -1797,9 +1832,11 @@ export default function App() {
   useEffect(() => {
     setPolicyForm({
       termsAndConditions: storeTermsAndConditions,
-      privacyPolicy: storePrivacyPolicy
+      privacyPolicy: storePrivacyPolicy,
+      contactEmail: storeContactEmail,
+      aboutUs: storeAboutUs
     });
-  }, [storeTermsAndConditions, storePrivacyPolicy]);
+  }, [storeTermsAndConditions, storePrivacyPolicy, storeContactEmail, storeAboutUs]);
 
   useEffect(() => {
     let active = true;
@@ -2210,6 +2247,12 @@ export default function App() {
       return undefined;
     }
 
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
         setZoomedMedia(null);
@@ -2218,7 +2261,11 @@ export default function App() {
 
     window.addEventListener("keydown", handleKeyDown);
 
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
   }, [zoomedMedia]);
 
   useEffect(() => {
@@ -2270,6 +2317,37 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    activePageRef.current = activePage;
+    pageHistoryRef.current = history;
+  }, [activePage, history]);
+
+  useEffect(() => {
+    window.history.replaceState({ vatsauraPage: activePageRef.current }, "");
+
+    const handleBrowserBack = () => {
+      const currentHistory = pageHistoryRef.current;
+
+      if (currentHistory.length === 0) {
+        return;
+      }
+
+      if (activePageRef.current === "profile") {
+        setIsEditingProfile(false);
+      }
+
+      const previousPage = currentHistory[currentHistory.length - 1] || "home";
+      setHistory((prev) => prev.slice(0, -1));
+      setActivePage(previousPage);
+      setMenuOpen(false);
+      setShowTshirtMenu(false);
+      setSearchSuggestionsOpen(false);
+    };
+
+    window.addEventListener("popstate", handleBrowserBack);
+    return () => window.removeEventListener("popstate", handleBrowserBack);
+  }, []);
+
   const navigateTo = (page) => {
     if (page === activePage) {
       setMenuOpen(false);
@@ -2282,6 +2360,7 @@ export default function App() {
     }
 
     setHistory((prev) => [...prev, activePage]);
+    window.history.pushState({ vatsauraPage: page }, "");
     setActivePage(page);
     setMenuOpen(false);
     setShowTshirtMenu(false);
@@ -2624,6 +2703,52 @@ export default function App() {
     navigateTo("product");
   };
 
+  const handleProductMediaTouchStart = (event) => {
+    const touch = event.touches?.[0];
+
+    if (!touch) {
+      return;
+    }
+
+    productMediaTouchRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      moved: false
+    };
+  };
+
+  const handleProductMediaTouchMove = (event) => {
+    const touch = event.touches?.[0];
+    const state = productMediaTouchRef.current;
+
+    if (!touch || !state) {
+      return;
+    }
+
+    const deltaX = touch.clientX - state.x;
+    const deltaY = touch.clientY - state.y;
+
+    if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 4) {
+      state.moved = true;
+    } else if (Math.abs(deltaX) > 6) {
+      state.moved = true;
+    }
+  };
+
+  const openZoomedProductMedia = (event, panel) => {
+    if (productMediaTouchRef.current?.moved) {
+      event.preventDefault();
+      productMediaTouchRef.current = null;
+      return;
+    }
+
+    setZoomedMedia({
+      type: "image",
+      src: panel.src,
+      alt: `${selectedProduct.name} ${panel.title}`
+    });
+  };
+
   const updateProductConfig = (field, value) => {
     setProductConfig((prev) => ({
       ...prev,
@@ -2711,6 +2836,11 @@ export default function App() {
       return;
     }
 
+    if (!/^\d{10}$/.test(String(checkoutForm.phone || "").trim())) {
+      setToast("Please enter a valid 10-digit phone number.");
+      return;
+    }
+
     navigateTo("payment");
   };
 
@@ -2725,9 +2855,12 @@ export default function App() {
       return;
     }
 
-    const auraUsed = (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user)) && user ? Math.min(auraPoints, cartTotal) : 0;
-    const remainingPayable = cartTotal - auraUsed;
-    const isFullAuraPayment = auraUsed >= cartTotal && auraUsed > 0;
+    const codCharge = paymentMethod === "cod" ? COD_CHARGE : 0;
+    const orderTotal = cartTotal + codCharge;
+    const canUseAuraPoints = paymentMethod !== "cod";
+    const auraUsed = canUseAuraPoints && (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user)) && user ? Math.min(auraPoints, orderTotal) : 0;
+    const remainingPayable = orderTotal - auraUsed;
+    const isFullAuraPayment = auraUsed >= orderTotal && auraUsed > 0;
 
     if (paymentMethod === "upi" && !isFullAuraPayment) {
       if (!settings.upiQrData) {
@@ -2755,7 +2888,7 @@ export default function App() {
       }
     }
 
-    if (paymentMethod === "aura" && auraPoints < cartTotal) {
+    if (paymentMethod === "aura" && auraPoints < orderTotal) {
       setToast("Not enough Aura points for this order.");
       return;
     }
@@ -2783,9 +2916,12 @@ export default function App() {
 
   const finalizeOrder = (orderId, orderStatus, razorpayData = null) => {
     const now = Date.now();
-    const auraUsed = (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user)) && user ? Math.min(auraPoints, cartTotal) : 0;
-    const remainingPayable = cartTotal - auraUsed;
-    const isFullAuraPayment = auraUsed >= cartTotal && auraUsed > 0;
+    const codCharge = paymentMethod === "cod" ? COD_CHARGE : 0;
+    const orderTotal = cartTotal + codCharge;
+    const canUseAuraPoints = paymentMethod !== "cod";
+    const auraUsed = canUseAuraPoints && (checkoutForm.useAuraPoints || (paymentMethod === "upi" && user)) && user ? Math.min(auraPoints, orderTotal) : 0;
+    const remainingPayable = orderTotal - auraUsed;
+    const isFullAuraPayment = auraUsed >= orderTotal && auraUsed > 0;
 
     const order = {
       id: orderId,
@@ -2796,7 +2932,8 @@ export default function App() {
       paymentSubmittedAt: (paymentMethod === "upi" || paymentMethod === "razorpay") && !isFullAuraPayment ? now : null,
       paymentSubmittedLabel: (paymentMethod === "upi" || paymentMethod === "razorpay") && !isFullAuraPayment ? new Date(now).toLocaleString("en-IN") : null,
       items: cart,
-      total: cartTotal,
+      total: orderTotal,
+      codCharge,
       auraPointsUsed: auraUsed,
       remainingPayable: remainingPayable,
       customer: { ...checkoutForm },
@@ -2855,7 +2992,7 @@ export default function App() {
           return {
             ...entry,
             auraPoints: nextAura,
-            totalSpent: Number(entry.totalSpent || 0) + cartTotal,
+            totalSpent: Number(entry.totalSpent || 0) + orderTotal,
             totalOrders: Number(entry.totalOrders || 0) + 1,
             auraHistory: history
           };
@@ -3593,11 +3730,15 @@ export default function App() {
   const saveStorePolicies = () => {
     const nextTerms = String(policyForm.termsAndConditions || "").trim();
     const nextPrivacy = String(policyForm.privacyPolicy || "").trim();
+    const nextContactEmail = String(policyForm.contactEmail || "").trim();
+    const nextAboutUs = String(policyForm.aboutUs || "").trim();
 
     setSettings((prev) => ({
       ...prev,
       termsAndConditions: nextTerms || defaultSettings.termsAndConditions,
-      privacyPolicy: nextPrivacy || defaultSettings.privacyPolicy
+      privacyPolicy: nextPrivacy || defaultSettings.privacyPolicy,
+      contactEmail: nextContactEmail || defaultSettings.contactEmail,
+      aboutUs: nextAboutUs || defaultSettings.aboutUs
     }));
     setToast("Policies updated.");
   };
@@ -3605,7 +3746,9 @@ export default function App() {
   const resetPolicyForm = () => {
     setPolicyForm({
       termsAndConditions: storeTermsAndConditions,
-      privacyPolicy: storePrivacyPolicy
+      privacyPolicy: storePrivacyPolicy,
+      contactEmail: storeContactEmail,
+      aboutUs: storeAboutUs
     });
     setToast("Policy draft reset.");
   };
@@ -3691,6 +3834,41 @@ export default function App() {
     </div>
   );
 
+  const renderMorePage = () => (
+    <div style={shellStyle}>
+      {renderBackButton()}
+      <div style={{ ...cardStyle, maxWidth: "980px" }}>
+        <h2 style={{ marginTop: 0 }}>More</h2>
+        <div
+          style={{
+            display: "grid",
+            gap: "24px",
+            lineHeight: 1.9,
+            color: tone.body
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "16px",
+              flexWrap: "wrap"
+            }}
+          >
+            <strong>Contact Us</strong>
+            <a href={`mailto:${storeContactEmail}`} style={{ color: tone.body }}>
+              {storeContactEmail}
+            </a>
+          </div>
+          <div>
+            <strong>About Us</strong>
+            <div style={{ marginTop: "8px", whiteSpace: "pre-line" }}>{storeAboutUs}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const renderBrandMedia = (className, style) =>
     brandMediaIsVideo ? (
       <video
@@ -3700,6 +3878,10 @@ export default function App() {
         muted
         playsInline
         preload="metadata"
+        controlsList="nodownload"
+        disablePictureInPicture
+        draggable={false}
+        onContextMenu={(event) => event.preventDefault()}
         className={className}
         style={style}
       />
@@ -3710,6 +3892,8 @@ export default function App() {
         className={className}
         style={style}
         decoding="async"
+        draggable={false}
+        onContextMenu={(event) => event.preventDefault()}
       />
     );
 
@@ -4262,9 +4446,18 @@ export default function App() {
                   >
                     Add to Cart
                   </button>
+                ) : isProductComingSoon ? (
+                  <button
+                    type="button"
+                    className="button-primary product-side__cta"
+                    style={primaryButtonStyle}
+                    disabled
+                  >
+                    Coming Soon
+                  </button>
                 ) : (
                   <p className="product-side__note">
-                    {isProductComingSoon ? "Coming Soon" : "Out of Stock"}
+                    Out of Stock
                   </p>
                 )}
               </div>
@@ -4287,13 +4480,9 @@ export default function App() {
                     <button
                       type="button"
                       className="product-media-button"
-                      onClick={() =>
-                        setZoomedMedia({
-                          type: "image",
-                          src: panel.src,
-                          alt: `${selectedProduct.name} ${panel.title}`
-                        })
-                      }
+                      onTouchStart={handleProductMediaTouchStart}
+                      onTouchMove={handleProductMediaTouchMove}
+                      onClick={(event) => openZoomedProductMedia(event, panel)}
                     >
                       <img
                         src={panel.src}
@@ -4361,11 +4550,13 @@ export default function App() {
               <div className="product-config-summary">
                 <span>Selected setup</span>
                 <strong>{productConfig.color} / {productConfig.size}</strong>
-                <p>
-                  {isProductInStock
-                    ? `${selectedQuantity} piece${selectedQuantity > 1 ? "s" : ""} ready for checkout`
-                    : availabilityText}
-                </p>
+                {isProductComingSoon ? null : (
+                  <p>
+                    {isProductInStock
+                      ? `${selectedQuantity} piece${selectedQuantity > 1 ? "s" : ""} ready for checkout`
+                      : availabilityText}
+                  </p>
+                )}
               </div>
 
               <div className="product-detail-list">
@@ -4592,9 +4783,12 @@ export default function App() {
   );
 
   const renderPayment = () => {
-    const auraUsed = checkoutForm.useAuraPoints && user ? Math.min(auraPoints, cartTotal) : 0;
-    const remainingPayable = cartTotal - auraUsed;
-    const isFullAuraPayment = auraUsed >= cartTotal && auraUsed > 0;
+    const codCharge = paymentMethod === "cod" ? COD_CHARGE : 0;
+    const orderTotal = cartTotal + codCharge;
+    const canUseAuraPoints = paymentMethod !== "cod";
+    const auraUsed = canUseAuraPoints && checkoutForm.useAuraPoints && user ? Math.min(auraPoints, orderTotal) : 0;
+    const remainingPayable = orderTotal - auraUsed;
+    const isFullAuraPayment = auraUsed >= orderTotal && auraUsed > 0;
 
     return (
       <div style={shellStyle}>
@@ -4618,16 +4812,16 @@ export default function App() {
                   padding: "16px",
                   borderRadius: "0px",
                   border: `1px solid ${tone.line}`,
-                  background: (checkoutForm.useAuraPoints || paymentMethod === "upi") ? tone.soft : "transparent",
+                  background: (canUseAuraPoints && (checkoutForm.useAuraPoints || paymentMethod === "upi")) ? tone.soft : "transparent",
                   marginBottom: "20px"
                 }}
               >
                 <input
                   type="checkbox"
-                  checked={checkoutForm.useAuraPoints || paymentMethod === "upi"}
-                  disabled={paymentMethod === "upi"}
+                  checked={canUseAuraPoints && (checkoutForm.useAuraPoints || paymentMethod === "upi")}
+                  disabled={paymentMethod === "upi" || paymentMethod === "cod"}
                   onChange={(e) => setCheckoutForm(prev => ({ ...prev, useAuraPoints: e.target.checked }))}
-                  style={{ width: "20px", height: "20px", cursor: paymentMethod === "upi" ? "default" : "pointer" }}
+                  style={{ width: "20px", height: "20px", cursor: paymentMethod === "upi" || paymentMethod === "cod" ? "default" : "pointer" }}
                 />
                 <div style={{ flex: 1 }}>
                   <p style={{ margin: 0, fontWeight: 700 }}>
@@ -4658,6 +4852,8 @@ export default function App() {
                       setPaymentMethod(option.value);
                       if (option.value === "upi" && user) {
                         setCheckoutForm((prev) => ({ ...prev, useAuraPoints: true }));
+                      } else if (option.value === "cod") {
+                        setCheckoutForm((prev) => ({ ...prev, useAuraPoints: false }));
                       }
                     }}
                     style={{
@@ -4810,6 +5006,12 @@ export default function App() {
                 <span>Total Amount</span>
                 <span>{formatCurrency(cartTotal)}</span>
               </div>
+              {codCharge > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>COD Charge</span>
+                  <span>{formatCurrency(codCharge)}</span>
+                </div>
+              )}
               {auraUsed > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#2e7d32", fontWeight: 700 }}>
                   <span>Aura Points Used</span>
@@ -4842,6 +5044,19 @@ export default function App() {
             </button>
           </aside>
         </div>
+        <footer className="payment-footer" aria-label="Accepted payment methods">
+          <div className="payment-footer__icons" aria-label="Payment methods we accept">
+            {acceptedPaymentLogos.map((logo) => (
+              <span className="payment-footer__icon-card" key={logo.name}>
+                <img src={logo.src} alt={logo.name} className="payment-footer__icon" />
+              </span>
+            ))}
+          </div>
+          <div className="footer-powered">
+            <span>Powered by Razorpay</span>
+            <img src={razorpayLogoSrc} alt="Razorpay" className="footer-powered__logo" />
+          </div>
+        </footer>
       </div>
     );
   };
@@ -6417,6 +6632,35 @@ export default function App() {
                         />
                       </label>
 
+                      <label style={{ display: "grid", gap: "8px", color: tone.muted }}>
+                        Contact Us Email
+                        <input
+                          value={policyForm.contactEmail}
+                          onChange={(event) =>
+                            setPolicyForm((prev) => ({
+                              ...prev,
+                              contactEmail: event.target.value
+                            }))
+                          }
+                          placeholder="support@example.com"
+                          style={inputStyle}
+                        />
+                      </label>
+
+                      <label style={{ display: "grid", gap: "8px", color: tone.muted }}>
+                        About Us
+                        <textarea
+                          value={policyForm.aboutUs}
+                          onChange={(event) =>
+                            setPolicyForm((prev) => ({
+                              ...prev,
+                              aboutUs: event.target.value
+                            }))
+                          }
+                          style={{ ...textareaStyle, minHeight: "180px" }}
+                        />
+                      </label>
+
                       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                         <button onClick={saveStorePolicies} style={primaryButtonStyle}>
                           Save Policies
@@ -7240,6 +7484,10 @@ export default function App() {
       return renderPrivacyPolicy();
     }
 
+    if (activePage === "more") {
+      return renderMorePage();
+    }
+
     if (activePage === "admin") {
       return renderAdmin();
     }
@@ -7350,8 +7598,12 @@ export default function App() {
         </div>
 
         <div
-          onClick={goHome}
-          className="brand-lockup brand-lockup--media-only"
+          onClick={activePage === "home" ? undefined : goHome}
+          onContextMenu={(event) => event.preventDefault()}
+          onDragStart={(event) => event.preventDefault()}
+          className={`brand-lockup brand-lockup--media-only${
+            activePage === "home" ? " brand-lockup--locked" : ""
+          }`}
           aria-label={siteName}
         >
           <div className="brand-lockup__media-shell">
@@ -7777,8 +8029,8 @@ export default function App() {
       {activePage === "home" && (
         <footer
           style={{
-            borderTop: `1px solid ${tone.line}`,
-            background: tone.white,
+            borderTop: `1px solid ${tone.darkLine}`,
+            background: tone.black,
             marginTop: "24px"
           }}
         >
@@ -7794,11 +8046,14 @@ export default function App() {
               flexWrap: "wrap"
             }}
           >
-            <p style={{ margin: 0, color: tone.muted }}>
-              {siteName}
-            </p>
+            <div className="home-footer__brand-line">
+              <span className="home-footer__brand-name">{siteName}</span>
+              <span className="home-footer__powered-text">Powered by Razorpay</span>
+              <img src={razorpayLogoSrc} alt="Razorpay" className="home-footer__razorpay-logo" />
+            </div>
             <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
               {[
+                { label: "More", page: "more" },
                 { label: "Terms & Conditions", page: "terms" },
                 { label: "Privacy Policy", page: "privacy" }
               ].map((item) => (
@@ -7809,7 +8064,7 @@ export default function App() {
                     background: "transparent",
                     border: "none",
                     padding: 0,
-                    color: tone.body,
+                    color: tone.white,
                     textDecoration: "underline",
                     cursor: "pointer",
                     fontSize: "14px"
