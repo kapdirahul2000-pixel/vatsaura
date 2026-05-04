@@ -9,6 +9,7 @@ import {
   signOut
 } from "firebase/auth";
 import brandHeaderVideo from "./brand-header-video.mp4";
+import { buildApiUrl } from "./apiConfig";
 
 const ADMIN_EMAILS = [
   "kapdirahul2000@gmail.com",
@@ -31,6 +32,41 @@ const CLOUDINARY_CLOUD_NAME = "dcm5dhh8e";
 const CLOUDINARY_UPLOAD_PRESET = "ml_default";
 const CLOUDINARY_UPLOAD_BASE = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}`;
 const CLOUDINARY_BASE = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}`;
+const RAZORPAY_CHECKOUT_URL = "https://checkout.razorpay.com/v1/checkout.js";
+let razorpayCheckoutPromise;
+
+const loadRazorpayCheckout = () => {
+  if (window.Razorpay) {
+    return Promise.resolve(true);
+  }
+
+  if (razorpayCheckoutPromise) {
+    return razorpayCheckoutPromise;
+  }
+
+  razorpayCheckoutPromise = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector(`script[src="${RAZORPAY_CHECKOUT_URL}"]`);
+
+    if (existingScript) {
+      existingScript.addEventListener("load", () => resolve(true), { once: true });
+      existingScript.addEventListener(
+        "error",
+        () => reject(new Error("Unable to load Razorpay checkout.")),
+        { once: true }
+      );
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = RAZORPAY_CHECKOUT_URL;
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => reject(new Error("Unable to load Razorpay checkout."));
+    document.body.appendChild(script);
+  });
+
+  return razorpayCheckoutPromise;
+};
 
 /** Turn Cloudinary public_id, partial paths, or bare upload paths into a full secure URL. */
 const resolveCloudinaryMediaUrl = (raw) => {
@@ -1726,14 +1762,9 @@ export default function App() {
   ), [products, latestDropProductIds]);
 
   useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.async = true;
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
+    loadRazorpayCheckout().catch((error) => {
+      console.error(error);
+    });
   }, []);
 
   useEffect(() => {
@@ -2494,20 +2525,20 @@ export default function App() {
   const handleRazorpayPayment = async (amountToPay, onPaymentSuccess) => {
     setRazorpayLoading(true);
     try {
-      // 1. Create order on backend
-      const response = await fetch(`${process.env.REACT_APP_API_URL || "https://vatsaura.onrender.com"}/create-order`, {
+      await loadRazorpayCheckout();
+
+      const response = await fetch(buildApiUrl("/api/payment/create-order"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: Number(amountToPay) })
       });
 
-      const orderData = await response.json();
+      const orderData = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(orderData.error || "Failed to initiate payment.");
       }
 
-      // 2. Configure Razorpay options
       const options = {
         key: process.env.REACT_APP_RAZORPAY_KEY_ID || orderData.key_id || "rzp_test_SkuVtxf6Sv14Z3",
         amount: orderData.amount,
@@ -2516,7 +2547,6 @@ export default function App() {
         description: "Order Payment",
         order_id: orderData.id,
         handler: function (response) {
-          // 3. Payment Successful
           onPaymentSuccess({
             razorpay_payment_id: response.razorpay_payment_id,
             razorpay_order_id: response.razorpay_order_id,

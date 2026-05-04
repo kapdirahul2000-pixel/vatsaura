@@ -1,12 +1,10 @@
-const API_BASE_URL = String(process.env.REACT_APP_API_BASE_URL || "").trim();
-
-const buildUrl = (path) => `${API_BASE_URL}${path}`;
+import { buildApiUrl } from "./apiConfig";
 
 const apiRequest = async (path, { method = "GET", body, token } = {}) => {
   let response;
 
   try {
-    response = await fetch(buildUrl(path), {
+    response = await fetch(buildApiUrl(path), {
       method,
       headers: {
         ...(body ? { "Content-Type": "application/json" } : {}),
@@ -15,7 +13,7 @@ const apiRequest = async (path, { method = "GET", body, token } = {}) => {
       ...(body ? { body: JSON.stringify(body) } : {})
     });
   } catch (error) {
-    const target = buildUrl(path) || path;
+    const target = buildApiUrl(path) || path;
     throw new Error(`Could not reach the auth server at ${target}.`);
   }
 

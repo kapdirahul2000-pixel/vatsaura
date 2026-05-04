@@ -34,17 +34,26 @@ const imageUpload = multer({
 
 const app = express();
 
-const allowedOrigins = [
-  "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app"
-];
+const parseOriginList = (value) =>
+  String(value || "")
+    .split(",")
+    .map((entry) => entry.trim().replace(/\/$/, ""))
+    .filter(Boolean);
 
-const defaultAllowedOrigin = allowedOrigins[0];
+const allowedOrigins = [
+  ...parseOriginList(process.env.CLIENT_ORIGINS || process.env.CLIENT_ORIGIN),
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "https://vatsaura.onrender.com",
+  "https://vatsaura-edko-git-final-v1-kapdirahul2000-2999s-projects.vercel.app"
+].filter((entry, index, array) => entry && array.indexOf(entry) === index);
 
 const isAllowedOrigin = (origin) => {
   const normalizedOrigin = String(origin || "").trim().replace(/\/$/, "");
 
   return (
-    allowedOrigins.map((entry) => entry.replace(/\/$/, "")).includes(normalizedOrigin) ||
+    allowedOrigins.includes(normalizedOrigin) ||
+    /^https:\/\/[a-z0-9-]+\.onrender\.com$/i.test(normalizedOrigin) ||
     /^https:\/\/vatsaura.*\.vercel\.app$/i.test(normalizedOrigin)
   );
 };
@@ -56,7 +65,7 @@ const corsOptions = {
       return;
     }
 
-    callback(new Error("Not allowed by CORS"));
+    callback(null, false);
   },
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
@@ -141,25 +150,6 @@ const defaultSecurityStore = () => ({
 const sessions = new Map();
 const challenges = new Map();
 const userSessions = new Map();
-
-app.use((req, res, next) => {
-  const requestOrigin = String(req.headers.origin || "").trim().replace(/\/$/, "");
-  const responseOrigin = isAllowedOrigin(requestOrigin)
-    ? requestOrigin
-    : defaultAllowedOrigin;
-
-  res.setHeader("Access-Control-Allow-Origin", responseOrigin);
-  res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
-  if (req.method === "OPTIONS") {
-    res.sendStatus(204);
-    return;
-  }
-
-  next();
-});
 
 // 1. Configure CORS middleware
 app.use(cors(corsOptions));
