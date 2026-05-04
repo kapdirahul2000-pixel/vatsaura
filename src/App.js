@@ -1374,6 +1374,13 @@ const CloseIcon = () => (
   </svg>
 );
 
+const LockIcon = (props) => (
+  <svg {...iconProps} {...props}>
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+);
+
 const SearchIcon = () => (
   <svg {...iconProps}>
     <circle cx="11" cy="11" r="7" />
@@ -5053,7 +5060,7 @@ export default function App() {
             ))}
           </div>
           <div className="footer-powered">
-            <span>Powered by Razorpay</span>
+            <span>Powered by</span>
             <img src={razorpayLogoSrc} alt="Razorpay" className="footer-powered__logo" />
           </div>
         </footer>
@@ -8028,30 +8035,56 @@ export default function App() {
 
       {activePage === "home" && (
         <footer
+          className="site-footer"
           style={{
-            borderTop: `1px solid ${tone.darkLine}`,
             background: tone.black,
-            marginTop: "24px"
+            color: tone.white,
+            padding: "16px 20px 10px",
+            textAlign: "center"
           }}
         >
-          <div
-            style={{
-              ...shellStyle,
-              paddingTop: "18px",
-              paddingBottom: "28px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "12px",
-              flexWrap: "wrap"
-            }}
-          >
-            <div className="home-footer__brand-line">
-              <span className="home-footer__brand-name">{siteName}</span>
-              <span className="home-footer__powered-text">Powered by Razorpay</span>
-              <img src={razorpayLogoSrc} alt="Razorpay" className="home-footer__razorpay-logo" />
+          <div style={{ ...shellStyle, maxWidth: "600px", margin: "0 auto" }}>
+            <div className="site-footer__branding" style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center", 
+              gap: "16px",
+              marginBottom: "-4px"
+            }}>
+              <span className="site-footer__brand-name" style={{ 
+                fontSize: "18px", 
+                fontWeight: 700, 
+                letterSpacing: "2px",
+                textTransform: "uppercase" 
+              }}>{siteName}</span>
+              <div className="site-footer__divider" style={{ width: "1px", height: "20px", background: "rgba(255,255,255,0.3)" }}></div>
+              <div className="site-footer__powered">
+                <span className="site-footer__powered-text">Powered by</span>
+                <img src={razorpayLogoSrc} alt="Razorpay" className="site-footer__powered-logo" />
+              </div>
             </div>
-            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+
+            <hr className="site-footer__rule" style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.15)", margin: "-2px 0 2px" }} />
+
+            <div style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center", 
+              gap: "8px", 
+              marginBottom: "4px",
+              opacity: 0.9
+            }}>
+              <LockIcon width={14} height={14} strokeWidth={2.5} />
+              <span style={{ fontSize: "12px", fontWeight: 600, letterSpacing: "1px", textTransform: "uppercase" }}>100% Secure Payments</span>
+            </div>
+
+            <div style={{ 
+              display: "flex", 
+              justifyContent: "center", 
+              gap: "24px", 
+              flexWrap: "wrap",
+              transform: "translateY(4px)"
+            }}>
               {[
                 { label: "More", page: "more" },
                 { label: "Terms & Conditions", page: "terms" },
@@ -8067,7 +8100,10 @@ export default function App() {
                     color: tone.white,
                     textDecoration: "underline",
                     cursor: "pointer",
-                    fontSize: "14px"
+                    fontSize: "12px",
+                    fontWeight: 500,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px"
                   }}
                 >
                   {item.label}
