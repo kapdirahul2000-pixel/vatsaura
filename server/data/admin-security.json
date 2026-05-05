@@ -1,0 +1,15 @@
+{
+  "password": "",
+  "pin": "",
+  "passwordHash": "$2b$12$PAni6d2bn0ZQ9p0iR4R2IuwL4vq83MC.bJHac1Fc/ZI9zsJnBE62K",
+  "pinHash": "",
+  "passwordEnabled": true,
+  "pinEnabled": false,
+  "activeAuthMethod": "password",
+  "otpPreferences": {
+    "email": true,
+    "sms": false
+  },
+  "createdAt": "2026-05-04T22:11:08.160Z",
+  "updatedAt": "2026-05-04T22:11:08.927Z"
+}

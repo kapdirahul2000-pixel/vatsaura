@@ -16,8 +16,6 @@ const ADMIN_EMAILS = [
   "vatsaurateam@gmail.com"
 ];
 
-const ADMIN_PANEL_PASSWORD = "Radheradhe@13";
-
 const STORAGE_KEYS = {
   cart: "vatsauraCart",
   wishlist: "vatsauraWishlist",
@@ -67,6 +65,26 @@ const loadRazorpayCheckout = () => {
   });
 
   return razorpayCheckoutPromise;
+};
+
+const checkBackendAdminAccess = async (firebaseUser) => {
+  if (!firebaseUser) {
+    return { admin: false, token: "" };
+  }
+
+  const token = await firebaseUser.getIdToken(true);
+  const response = await fetch(buildApiUrl("/api/admin-check"), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  return {
+    admin: response.ok && payload.admin === true,
+    token
+  };
 };
 
 /** Turn Cloudinary public_id, partial paths, or bare upload paths into a full secure URL. */
@@ -1656,7 +1674,7 @@ export default function App() {
   const lastAuthenticatedEmailRef = useRef("");
 
   const userEmail = String(user?.email || "").toLowerCase();
-  const isAdminOwner = Boolean(userEmail) && ADMIN_EMAILS.includes(userEmail);
+  const isAdminOwner = user?.role === "admin";
   const isAdmin = isAdminOwner && hasAdminAccess;
   const activeAdminEmail = isAdminOwner ? userEmail : frontendAdminEmail;
   const currentUserRecord = useMemo(() => 
@@ -2159,11 +2177,24 @@ export default function App() {
     const storedUnlock = readSessionValue(STORAGE_KEYS.adminSession, "");
 
     if (storedUnlock && storedUnlock === userEmail) {
-      startTransition(() => {
-        setAdminSessionToken(userEmail);
-        setHasAdminAccess(true);
-        setAdminAuthStep("authenticated");
-      });
+      checkBackendAdminAccess(auth.currentUser)
+        .then((backendAdmin) => {
+          if (!backendAdmin.admin) {
+            throw new Error("Admin access denied.");
+          }
+
+          startTransition(() => {
+            setAdminSessionToken(backendAdmin.token);
+            setHasAdminAccess(true);
+            setAdminAuthStep("authenticated");
+          });
+        })
+        .catch(() => {
+          writeSessionValue(STORAGE_KEYS.adminSession, "");
+          setAdminSessionToken("");
+          setHasAdminAccess(false);
+          setAdminAuthStep("loginPassword");
+        });
     } else if (storedUnlock && storedUnlock !== userEmail) {
       writeSessionValue(STORAGE_KEYS.adminSession, "");
       setAdminSessionToken("");
@@ -2294,6 +2325,14 @@ export default function App() {
           return;
         }
 
+      let backendAdmin = { admin: false, token: "" };
+
+      try {
+        backendAdmin = await checkBackendAdminAccess(firebaseUser);
+      } catch (error) {
+        console.error("Admin check failed:", error);
+      }
+
       const nextUser = {
         id: existing?.id || createId("usr"),
         name: existing?.name || firebaseUser.displayName || email.split("@")[0],
@@ -2302,14 +2341,14 @@ export default function App() {
         gender: existing?.gender || "",
         birthdate: existing?.birthdate || "",
         photo: getFirebaseProfilePhotoUrl(firebaseUser) || existing?.photo || "",
-        role: ADMIN_EMAILS.includes(email) ? "admin" : "customer",
+        role: backendAdmin.admin ? "admin" : "customer",
         status: "active",
         joinedAt: existing?.joinedAt || Date.now(),
         lastLoginAt: Date.now(),
         auraPoints:
           existing?.auraPoints !== undefined
             ? Number(existing.auraPoints)
-            : ADMIN_EMAILS.includes(email)
+            : backendAdmin.admin
               ? 0
               : 100
       };
@@ -2488,26 +2527,33 @@ export default function App() {
     setSearchSuggestionsOpen(false);
   };
 
-  const submitAdminPassword = () => {
+  const submitAdminPassword = async () => {
     setAdminSecurityError("");
 
-    if (adminLoginForm.password !== ADMIN_PANEL_PASSWORD) {
-      setAdminSecurityError("Incorrect password");
+    try {
+      const backendAdmin = await checkBackendAdminAccess(auth.currentUser);
+
+      if (!backendAdmin.admin) {
+        setAdminSecurityError("Admin access denied.");
+        return;
+      }
+
+      setAdminSessionToken(backendAdmin.token);
+      writeSessionValue(STORAGE_KEYS.adminSession, userEmail);
+      setHasAdminAccess(true);
+      setAdminAuthStep("authenticated");
+      setAdminLoginForm((prev) => ({
+        ...prev,
+        password: "",
+        pin: "",
+        otpCode: ""
+      }));
+      setToast("Admin panel unlocked.");
+      navigateTo("admin");
+    } catch (error) {
+      setAdminSecurityError(error.message || "Unable to verify admin access.");
       return;
     }
-
-    setAdminSessionToken(userEmail);
-    writeSessionValue(STORAGE_KEYS.adminSession, userEmail);
-    setHasAdminAccess(true);
-    setAdminAuthStep("authenticated");
-    setAdminLoginForm((prev) => ({
-      ...prev,
-      password: "",
-      pin: "",
-      otpCode: ""
-    }));
-    setToast("Admin panel unlocked.");
-    navigateTo("admin");
   };
 
   const endAdminSession = () => {

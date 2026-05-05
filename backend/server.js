@@ -6,13 +6,16 @@ const path = require("path");
 const crypto = require("crypto");
 const https = require("https");
 const nodemailer = require("nodemailer");
+const bcrypt = require("bcryptjs");
 const Razorpay = require("razorpay");
 const shortid = require("shortid");
 const cloudinary = require("cloudinary").v2;
 const multer = require("multer");
+const firebaseAdmin = require("firebase-admin");
 
 dotenv.config();
-// Also try loading from the parent directory if running from the server folder
+dotenv.config({ path: path.resolve(__dirname, ".env") });
+// Load root .env as a fallback for values not defined in backend/.env.
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const cloudinaryCloudName = String(
@@ -36,6 +39,7 @@ const app = express();
 
 const allowedOrigins = [
   "http://localhost:3000",
+  "http://localhost:3003",
   "https://vatsaura.in",
   "https://www.vatsaura.in"
 ];
@@ -65,6 +69,55 @@ const DEFAULT_ADMIN_EMAILS = [
   "vatsaurateam@gmail.com"
 ];
 
+const getFirebasePrivateKey = () =>
+  String(process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+
+const getFirebaseServiceAccount = () => {
+  const rawServiceAccount = String(
+    process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_JSON || ""
+  ).trim();
+
+  if (rawServiceAccount) {
+    const parsed = JSON.parse(rawServiceAccount);
+    return {
+      ...parsed,
+      private_key: String(parsed.private_key || "").replace(/\\n/g, "\n")
+    };
+  }
+
+  const projectId = String(
+    process.env.FIREBASE_PROJECT_ID || process.env.REACT_APP_FIREBASE_PROJECT_ID || ""
+  ).trim();
+  const clientEmail = String(process.env.FIREBASE_CLIENT_EMAIL || "").trim();
+  const privateKey = getFirebasePrivateKey();
+
+  if (projectId && clientEmail && privateKey) {
+    return {
+      project_id: projectId,
+      client_email: clientEmail,
+      private_key: privateKey
+    };
+  }
+
+  return null;
+};
+
+const initializeFirebaseAdmin = () => {
+  if (firebaseAdmin.apps.length) {
+    return firebaseAdmin.app();
+  }
+
+  const serviceAccount = getFirebaseServiceAccount();
+
+  if (!serviceAccount) {
+    throw new Error("Firebase Admin SDK credentials are not configured.");
+  }
+
+  return firebaseAdmin.initializeApp({
+    credential: firebaseAdmin.credential.cert(serviceAccount)
+  });
+};
+
 const parseEmailList = (value, fallback = DEFAULT_ADMIN_EMAILS) => {
   const configuredValues = String(value || "")
     .split(",")
@@ -77,7 +130,7 @@ const parseEmailList = (value, fallback = DEFAULT_ADMIN_EMAILS) => {
 };
 
 const configuredAdminEmails = parseEmailList(
-  process.env.ADMIN_OWNER_EMAIL || process.env.REACT_APP_ADMIN_OWNER_EMAIL
+  process.env.ADMIN_EMAILS || process.env.ADMIN_OWNER_EMAIL || process.env.REACT_APP_ADMIN_OWNER_EMAIL
 );
 
 const config = {
@@ -88,7 +141,7 @@ const config = {
   ownerEmail: configuredAdminEmails[0] || DEFAULT_ADMIN_EMAILS[0],
   ownerPhone: String(process.env.ADMIN_OWNER_PHONE || "").trim(),
   otpLength: Math.max(4, Math.min(8, Number(process.env.ADMIN_OTP_LENGTH || 6))),
-  otpTtlMs: Math.max(1, Number(process.env.ADMIN_OTP_TTL_MINUTES || 10)) * 60 * 1000,
+  otpTtlMs: Math.max(1, Number(process.env.ADMIN_OTP_TTL_MINUTES || 5)) * 60 * 1000,
   sessionTtlMs: Math.max(5, Number(process.env.ADMIN_SESSION_TTL_MINUTES || 120)) * 60 * 1000,
   userSessionTtlMs: Math.max(30, Number(process.env.USER_SESSION_TTL_MINUTES || 1440)) * 60 * 1000,
   dataFile: path.resolve(
@@ -107,9 +160,9 @@ const config = {
     host: String(process.env.SMTP_HOST || "").trim(),
     port: Number(process.env.SMTP_PORT || 587),
     secure: String(process.env.SMTP_SECURE || "false").trim().toLowerCase() === "true",
-    user: String(process.env.SMTP_USER || "").trim(),
-    pass: String(process.env.SMTP_PASS || "").trim(),
-    from: String(process.env.SMTP_FROM || process.env.SMTP_USER || "").trim()
+    user: String(process.env.EMAIL_USER || process.env.SMTP_USER || "").trim(),
+    pass: String(process.env.EMAIL_PASS || process.env.SMTP_PASS || "").trim(),
+    from: String(process.env.SMTP_FROM || process.env.EMAIL_USER || process.env.SMTP_USER || "").trim()
   },
   twilio: {
     accountSid: String(process.env.TWILIO_ACCOUNT_SID || "").trim(),
@@ -121,6 +174,11 @@ const config = {
 const defaultSecurityStore = () => ({
   password: "",
   pin: "",
+  passwordHash: "",
+  pinHash: "",
+  passwordEnabled: true,
+  pinEnabled: false,
+  activeAuthMethod: "password",
   otpPreferences: {
     email: true,
     sms: false
@@ -132,6 +190,7 @@ const defaultSecurityStore = () => ({
 const sessions = new Map();
 const challenges = new Map();
 const userSessions = new Map();
+const rateLimitBuckets = new Map();
 
 // 1. Configure CORS middleware
 app.use(cors(corsOptions));
@@ -145,6 +204,27 @@ app.use(
     limit: "1mb"
   })
 );
+
+const authRateLimiter = ({ windowMs = 15 * 60 * 1000, max = 25 } = {}) => (req, res, next) => {
+  const key = `${req.ip || req.socket?.remoteAddress || "unknown"}:${req.path}`;
+  const now = Date.now();
+  const bucket = rateLimitBuckets.get(key) || { count: 0, resetAt: now + windowMs };
+
+  if (bucket.resetAt <= now) {
+    bucket.count = 0;
+    bucket.resetAt = now + windowMs;
+  }
+
+  bucket.count += 1;
+  rateLimitBuckets.set(key, bucket);
+
+  if (bucket.count > max) {
+    res.status(429).json({ error: "Too many attempts. Please wait and try again." });
+    return;
+  }
+
+  next();
+};
 
 const ensureDataFile = () => {
   const folder = path.dirname(config.dataFile);
@@ -247,6 +327,62 @@ const writeSecurityStore = (nextStore) => {
   return store;
 };
 
+const hashAdminCredential = async (value) => bcrypt.hash(String(value || ""), 12);
+
+const verifyAdminCredentialHash = async (value, hash) => {
+  if (!value || !hash) {
+    return false;
+  }
+
+  return bcrypt.compare(String(value), String(hash));
+};
+
+const normalizeAuthMethod = (value) =>
+  String(value || "").trim().toLowerCase() === "pin" ? "pin" : "password";
+
+const migrateAdminSecurityStore = async () => {
+  const store = readSecurityStore();
+  let changed = false;
+  const nextStore = { ...store };
+
+  if (!nextStore.passwordHash && String(nextStore.password || "").trim()) {
+    nextStore.passwordHash = await hashAdminCredential(String(nextStore.password));
+    nextStore.password = "";
+    nextStore.passwordEnabled = true;
+    changed = true;
+  }
+
+  if (!nextStore.pinHash && String(nextStore.pin || "").trim()) {
+    nextStore.pinHash = await hashAdminCredential(String(nextStore.pin));
+    nextStore.pin = "";
+    nextStore.pinEnabled = true;
+    changed = true;
+  }
+
+  if (!nextStore.passwordHash && process.env.ADMIN_INITIAL_PASSWORD) {
+    nextStore.passwordHash = await hashAdminCredential(process.env.ADMIN_INITIAL_PASSWORD);
+    nextStore.passwordEnabled = true;
+    nextStore.activeAuthMethod = "password";
+    changed = true;
+  }
+
+  if (!nextStore.passwordHash && nextStore.activeAuthMethod === "password" && nextStore.pinHash) {
+    nextStore.activeAuthMethod = "pin";
+    changed = true;
+  }
+
+  if (!nextStore.pinHash && nextStore.activeAuthMethod === "pin" && nextStore.passwordHash) {
+    nextStore.activeAuthMethod = "password";
+    changed = true;
+  }
+
+  if (changed) {
+    return writeSecurityStore(nextStore);
+  }
+
+  return store;
+};
+
 const appendOtpLog = (message) => {
   try {
     const folder = path.dirname(config.otpLogFile);
@@ -264,6 +400,45 @@ const appendOtpLog = (message) => {
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 const isAuthorizedAdminEmail = (email) =>
   config.ownerEmails.includes(normalizeEmail(email));
+
+const verifyFirebaseAdminRequest = async (req) => {
+  const token = getBearerToken(req);
+
+  if (!token) {
+    return null;
+  }
+
+  initializeFirebaseAdmin();
+  const decodedToken = await firebaseAdmin.auth().verifyIdToken(token);
+  const email = normalizeEmail(decodedToken.email);
+  const admin =
+    isAuthorizedAdminEmail(email) ||
+    decodedToken.admin === true ||
+    decodedToken.role === "admin";
+
+  return {
+    admin,
+    email,
+    decodedToken
+  };
+};
+
+const requireVerifiedAdmin = async (req, res, next) => {
+  try {
+    const verified = await verifyFirebaseAdminRequest(req);
+
+    if (!verified?.admin) {
+      res.status(403).json({ admin: false });
+      return;
+    }
+
+    req.admin = verified;
+    next();
+  } catch (error) {
+    console.error("Firebase admin verification failed:", error.message);
+    res.status(401).json({ admin: false });
+  }
+};
 
 const maskEmail = (email) => {
   const normalized = normalizeEmail(email);
@@ -304,11 +479,24 @@ const getEnabledOtpMethods = (store) => {
 
 const buildSecurityStatus = (store) => {
   const availableContactMethods = getAvailableContactMethods();
+  const passwordConfigured = Boolean(String(store.passwordHash || store.password || "").trim());
+  const pinConfigured = Boolean(String(store.pinHash || store.pin || "").trim());
+  const passwordEnabled = passwordConfigured && store.passwordEnabled !== false;
+  const pinEnabled = pinConfigured && Boolean(store.pinEnabled);
+  const activeAuthMethod =
+    store.activeAuthMethod === "pin" && pinEnabled ? "pin" : "password";
 
   return {
-    needsSetup: !String(store.password || "").trim() && !String(store.pin || "").trim(),
-    passwordConfigured: Boolean(String(store.password || "").trim()),
-    pinConfigured: Boolean(String(store.pin || "").trim()),
+    needsSetup: !passwordConfigured && !pinConfigured,
+    passwordConfigured,
+    pinConfigured,
+    passwordEnabled,
+    pinEnabled,
+    activeAuthMethod,
+    availableAuthMethods: [
+      ...(passwordEnabled ? ["password"] : []),
+      ...(pinEnabled ? ["pin"] : [])
+    ],
     otpPreferences: {
       email: store?.otpPreferences?.email !== false,
       sms: Boolean(store?.otpPreferences?.sms)
@@ -364,6 +552,15 @@ const getBearerToken = (req) => {
 };
 
 const requireAdminSession = (req, res) => {
+  if (req.admin?.admin) {
+    return {
+      token: getBearerToken(req),
+      session: {
+        email: req.admin.email
+      }
+    };
+  }
+
   cleanupMemory();
 
   const token = getBearerToken(req);
@@ -535,7 +732,7 @@ const formatSmtpFailureHint = (err) => {
   return "Verify SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, and SMTP_FROM in the server .env file, restart the backend, and try again.";
 };
 
-const sendEmailViaSmtp = async (subject, text) => {
+const sendEmailViaSmtp = async (subject, text, toEmail = config.ownerEmail) => {
   const raw = config.smtp;
   let host = String(raw.host || "").trim();
   const port = Number(raw.port || 587);
@@ -545,7 +742,7 @@ const sendEmailViaSmtp = async (subject, text) => {
   const fromConfigured = String(raw.from || "").trim();
   const from = fromConfigured || user;
   const userLower = normalizeEmail(user);
-  const ownerLower = normalizeEmail(config.ownerEmail);
+  const ownerLower = normalizeEmail(toEmail || config.ownerEmail);
 
   if ((user && !pass) || (!user && pass)) {
     return {
@@ -562,7 +759,7 @@ const sendEmailViaSmtp = async (subject, text) => {
     host = "smtp.gmail.com";
   }
 
-  if (!host || !from || !config.ownerEmail) {
+  if (!host || !from || !toEmail) {
     return {
       success: false,
       hint: `Set SMTP_HOST (for Gmail use smtp.gmail.com), SMTP_USER, SMTP_PASS, SMTP_FROM or matching SMTP_USER, and ADMIN_OWNER_EMAIL in the server .env. ${gmailSmtpHint}`
@@ -589,7 +786,7 @@ const sendEmailViaSmtp = async (subject, text) => {
     await transport.sendMail({
       // Gmail rejects many From addresses that don't match the authenticated account.
       from: gmailHost && user && normalizeEmail(from) !== userLower ? user : from,
-      to: config.ownerEmail,
+      to: toEmail,
       replyTo: user || undefined,
       subject,
       text
@@ -609,17 +806,17 @@ const sendEmailViaSmtp = async (subject, text) => {
   }
 };
 
-const deliverOtp = async (method, otp) => {
+const deliverOtp = async (method, otp, toEmail = config.ownerEmail) => {
   const message = `${config.appName} admin OTP: ${otp}`;
 
   if (method === "email") {
-    const smtpResult = await sendEmailViaSmtp("Admin OTP", message);
+    const smtpResult = await sendEmailViaSmtp("Admin OTP", message, toEmail);
     const delivered = smtpResult.success;
 
     let smtpDeliveryNote;
 
     if (!delivered) {
-      const fallbackMessage = `[Admin OTP][EMAIL][${config.ownerEmail}] ${otp}`;
+      const fallbackMessage = `[Admin OTP][EMAIL][${toEmail}] ${otp}`;
       console.info(fallbackMessage);
       appendOtpLog(fallbackMessage);
 
@@ -629,7 +826,7 @@ const deliverOtp = async (method, otp) => {
     }
 
     return {
-      contact: maskEmail(config.ownerEmail),
+      contact: maskEmail(toEmail),
       ...(smtpDeliveryNote ? { smtpDeliveryNote } : {})
     };
   }
@@ -680,6 +877,301 @@ const ensureEnabledOtpMethod = (store, requestedPreferences) => {
 
   return preferences;
 };
+
+const getCredentialMethods = (store) => {
+  const status = buildSecurityStatus(store);
+  return status.availableAuthMethods;
+};
+
+const assertValidPassword = (password) => {
+  if (!String(password || "").trim() || String(password).length < 8) {
+    throw new Error("Password must be at least 8 characters.");
+  }
+};
+
+const assertValidPin = (pin) => {
+  if (!/^\d{4,8}$/.test(String(pin || ""))) {
+    throw new Error("PIN must be 4 to 8 digits.");
+  }
+};
+
+app.post("/api/admin-check", async (req, res) => {
+  try {
+    const verified = await verifyFirebaseAdminRequest(req);
+    res.json({ admin: Boolean(verified?.admin) });
+  } catch (error) {
+    console.error("Admin check failed:", error.message);
+    res.json({ admin: false });
+  }
+});
+
+app.get("/auth-status", authRateLimiter({ max: 60 }), async (_req, res) => {
+  const store = await migrateAdminSecurityStore();
+  res.json(buildSecurityStatus(store));
+});
+
+app.post("/send-otp", authRateLimiter({ max: 8 }), async (req, res) => {
+  cleanupMemory();
+
+  const email = normalizeEmail(req.body?.email);
+
+  if (!isAuthorizedAdminEmail(email)) {
+    res.status(403).json({ error: "This email is not allowed for admin login." });
+    return;
+  }
+
+  const store = await migrateAdminSecurityStore();
+  const status = buildSecurityStatus(store);
+
+  if (status.needsSetup) {
+    res.status(400).json({ error: "Admin credentials are not configured yet." });
+    return;
+  }
+
+  const otp = createOtp();
+  const challengeId = createId("otp-login");
+
+  challenges.set(challengeId, {
+    id: challengeId,
+    type: "otp-login",
+    email,
+    otp,
+    otpVerified: false,
+    otpUsed: false,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + config.otpTtlMs
+  });
+
+  try {
+    const delivery = await deliverOtp("email", otp, email);
+    res.json({
+      challengeId,
+      expiresInSeconds: Math.floor(config.otpTtlMs / 1000),
+      contact: delivery.contact,
+      ...(delivery.smtpDeliveryNote ? { smtpDeliveryNote: delivery.smtpDeliveryNote } : {})
+    });
+  } catch (error) {
+    challenges.delete(challengeId);
+    res.status(500).json({ error: error.message || "Unable to send OTP." });
+  }
+});
+
+app.post("/verify-otp", authRateLimiter({ max: 12 }), async (req, res) => {
+  cleanupMemory();
+
+  const challengeId = String(req.body?.challengeId || "").trim();
+  const otp = String(req.body?.otp || "").trim();
+  const challenge = challenges.get(challengeId);
+
+  if (!challenge || challenge.type !== "otp-login" || challenge.expiresAt <= Date.now()) {
+    challenges.delete(challengeId);
+    res.status(400).json({ error: "OTP is invalid or expired." });
+    return;
+  }
+
+  if (challenge.otpUsed || !challenge.otp || otp !== challenge.otp) {
+    res.status(401).json({ error: "Incorrect OTP." });
+    return;
+  }
+
+  challenge.otp = "";
+  challenge.otpUsed = true;
+  challenge.otpVerified = true;
+  challenge.credentialExpiresAt = Date.now() + 5 * 60 * 1000;
+  challenges.set(challengeId, challenge);
+
+  const store = await migrateAdminSecurityStore();
+
+  res.json({
+    verified: true,
+    challengeId,
+    securityStatus: buildSecurityStatus(store)
+  });
+});
+
+app.post("/verify-credential", authRateLimiter({ max: 15 }), async (req, res) => {
+  cleanupMemory();
+
+  const challengeId = String(req.body?.challengeId || "").trim();
+  const method = normalizeAuthMethod(req.body?.method);
+  const credential = String(req.body?.credential || "");
+  const challenge = challenges.get(challengeId);
+  const store = await migrateAdminSecurityStore();
+  const status = buildSecurityStatus(store);
+
+  if (!challenge || challenge.type !== "otp-login" || !challenge.otpVerified) {
+    res.status(400).json({ error: "Verify OTP before entering password or PIN." });
+    return;
+  }
+
+  if (challenge.credentialExpiresAt <= Date.now()) {
+    challenges.delete(challengeId);
+    res.status(400).json({ error: "Login challenge expired. Request a new OTP." });
+    return;
+  }
+
+  if (!status.availableAuthMethods.includes(method)) {
+    res.status(400).json({ error: `${method === "pin" ? "PIN" : "Password"} login is not enabled.` });
+    return;
+  }
+
+  const expectedHash = method === "pin" ? store.pinHash : store.passwordHash;
+  const matched = await verifyAdminCredentialHash(credential, expectedHash);
+
+  if (!matched) {
+    res.status(401).json({ error: `Incorrect ${method === "pin" ? "PIN" : "password"}.` });
+    return;
+  }
+
+  const token = createSession(challenge.email);
+  challenges.delete(challengeId);
+
+  res.json({
+    token,
+    email: challenge.email,
+    securityStatus: buildSecurityStatus(store)
+  });
+});
+
+app.post("/set-password", authRateLimiter({ max: 20 }), async (req, res) => {
+  const auth = requireAdminSession(req, res);
+
+  if (!auth) {
+    return;
+  }
+
+  try {
+    const oldPassword = String(req.body?.oldPassword || "");
+    const newPassword = String(req.body?.newPassword || "");
+    const disable = Boolean(req.body?.disable);
+    const store = await migrateAdminSecurityStore();
+
+    if (store.passwordHash && !(await verifyAdminCredentialHash(oldPassword, store.passwordHash))) {
+      res.status(401).json({ error: "Old password is incorrect." });
+      return;
+    }
+
+    const nextStore = { ...store };
+
+    if (disable) {
+      if (!buildSecurityStatus(store).pinEnabled) {
+        res.status(400).json({ error: "Enable PIN before disabling password." });
+        return;
+      }
+
+      nextStore.passwordEnabled = false;
+      if (nextStore.activeAuthMethod === "password") {
+        nextStore.activeAuthMethod = "pin";
+      }
+    } else {
+      assertValidPassword(newPassword);
+      nextStore.passwordHash = await hashAdminCredential(newPassword);
+      nextStore.password = "";
+      nextStore.passwordEnabled = true;
+      if (!buildSecurityStatus(store).pinEnabled) {
+        nextStore.activeAuthMethod = "password";
+      }
+    }
+
+    const saved = writeSecurityStore(nextStore);
+    res.json({ securityStatus: buildSecurityStatus(saved) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Unable to update password." });
+  }
+});
+
+app.post("/set-pin", authRateLimiter({ max: 20 }), async (req, res) => {
+  const auth = requireAdminSession(req, res);
+
+  if (!auth) {
+    return;
+  }
+
+  try {
+    const oldPin = String(req.body?.oldPin || "");
+    const newPin = String(req.body?.newPin || "");
+    const disable = Boolean(req.body?.disable);
+    const store = await migrateAdminSecurityStore();
+
+    if (store.pinHash && !(await verifyAdminCredentialHash(oldPin, store.pinHash))) {
+      res.status(401).json({ error: "Old PIN is incorrect." });
+      return;
+    }
+
+    const nextStore = { ...store };
+
+    if (disable) {
+      if (!buildSecurityStatus(store).passwordEnabled) {
+        res.status(400).json({ error: "Enable password before disabling PIN." });
+        return;
+      }
+
+      nextStore.pinEnabled = false;
+      if (nextStore.activeAuthMethod === "pin") {
+        nextStore.activeAuthMethod = "password";
+      }
+    } else {
+      assertValidPin(newPin);
+      nextStore.pinHash = await hashAdminCredential(newPin);
+      nextStore.pin = "";
+      nextStore.pinEnabled = true;
+    }
+
+    const saved = writeSecurityStore(nextStore);
+    res.json({ securityStatus: buildSecurityStatus(saved) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Unable to update PIN." });
+  }
+});
+
+app.post("/set-auth-method", authRateLimiter({ max: 20 }), async (req, res) => {
+  const auth = requireAdminSession(req, res);
+
+  if (!auth) {
+    return;
+  }
+
+  try {
+    const store = await migrateAdminSecurityStore();
+    const nextStore = { ...store };
+    const method = normalizeAuthMethod(req.body?.method || req.body?.activeMethod);
+    const enabled = req.body?.enabled;
+
+    if (typeof enabled === "boolean") {
+      if (method === "password") {
+        if (!nextStore.passwordHash && enabled) {
+          throw new Error("Set a password before enabling password login.");
+        }
+        nextStore.passwordEnabled = enabled;
+      } else {
+        if (!nextStore.pinHash && enabled) {
+          throw new Error("Set a PIN before enabling PIN login.");
+        }
+        nextStore.pinEnabled = enabled;
+      }
+    }
+
+    const nextStatus = buildSecurityStatus(nextStore);
+
+    if (nextStatus.availableAuthMethods.length === 0) {
+      throw new Error("At least one login method must remain enabled.");
+    }
+
+    if (req.body?.activeMethod || req.body?.method) {
+      if (!nextStatus.availableAuthMethods.includes(method)) {
+        throw new Error(`Enable ${method === "pin" ? "PIN" : "password"} before making it active.`);
+      }
+      nextStore.activeAuthMethod = method;
+    } else if (!nextStatus.availableAuthMethods.includes(nextStore.activeAuthMethod)) {
+      nextStore.activeAuthMethod = nextStatus.availableAuthMethods[0];
+    }
+
+    const saved = writeSecurityStore(nextStore);
+    res.json({ securityStatus: buildSecurityStatus(saved) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Unable to update login method." });
+  }
+});
 
 app.get("/api/admin/security/status", (_req, res) => {
   cleanupMemory();
@@ -948,6 +1440,11 @@ app.post("/api/admin/auth/verify-otp", (req, res) => {
     securityStatus: buildSecurityStatus(store)
   });
 });
+
+app.use("/api/admin/session", requireVerifiedAdmin);
+app.use("/api/admin/security/password", requireVerifiedAdmin);
+app.use("/api/admin/security/pin", requireVerifiedAdmin);
+app.use("/api/admin/security/two-factor", requireVerifiedAdmin);
 
 app.get("/api/admin/session", (req, res) => {
   const auth = requireAdminSession(req, res);
@@ -1267,13 +1764,7 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/admin/users", (req, res) => {
-  const auth = requireAdminSession(req, res);
-
-  if (!auth) {
-    return;
-  }
-
+app.get("/api/admin/users", requireVerifiedAdmin, (req, res) => {
   const store = readUserAuthStore();
 
   res.json({
@@ -1281,13 +1772,7 @@ app.get("/api/admin/users", (req, res) => {
   });
 });
 
-app.get("/api/admin/users/activity", (req, res) => {
-  const auth = requireAdminSession(req, res);
-
-  if (!auth) {
-    return;
-  }
-
+app.get("/api/admin/users/activity", requireVerifiedAdmin, (req, res) => {
   const store = readUserAuthStore();
 
   res.json({
