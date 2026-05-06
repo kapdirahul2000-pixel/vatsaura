@@ -1662,7 +1662,7 @@ app.post("/api/auth/signup", (req, res) => {
     status: "active",
     joinedAt: now,
     lastLoginAt: now,
-    auraPoints: role === "admin" ? 0 : 100
+    auraPoints: 0
   };
 
   const token = createUserSession(email);

@@ -386,6 +386,7 @@ const adminTabs = [
   { key: "users", label: "Users" },
   { key: "products", label: "Products" },
   { key: "orders", label: "Orders" },
+  { key: "returns", label: "Return Management" },
   { key: "content", label: "Content" },
   { key: "settings", label: "Settings" }
 ];
@@ -1641,6 +1642,14 @@ export default function App() {
     reason: "",
     targetUserEmail: ""
   });
+  const [returnRequests, setReturnRequests] = useState([]);
+  const [showReturnForm, setShowReturnForm] = useState(false);
+  const [selectedReturnOrder, setSelectedReturnOrder] = useState(null);
+  const [returnForm, setReturnForm] = useState({
+    phone: "",
+    email: "",
+    reason: ""
+  });
   const [, setRazorpayLoading] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -2348,9 +2357,7 @@ export default function App() {
         auraPoints:
           existing?.auraPoints !== undefined
             ? Number(existing.auraPoints)
-            : backendAdmin.admin
-              ? 0
-              : 100
+            : 0
       };
 
         setUsers((prev) => [
@@ -2579,6 +2586,37 @@ export default function App() {
   const saveAdminTwoFactorSettings = () => {
     setAdminSecurityError("");
     setToast("Email and SMS OTP are disabled.");
+  };
+
+  const submitReturnRequest = () => {
+    if (!returnForm.phone || !returnForm.email || !returnForm.reason) {
+      setToast("Please fill all fields.");
+      return;
+    }
+
+    const newRequest = {
+      id: createId("ret"),
+      orderId: selectedReturnOrder.id,
+      customerName: user.name,
+      customerEmail: returnForm.email,
+      customerPhone: returnForm.phone,
+      reason: returnForm.reason,
+      status: "pending",
+      requestedAt: Date.now(),
+      orderDate: selectedReturnOrder.createdAt
+    };
+
+    setReturnRequests((prev) => [newRequest, ...prev]);
+    setShowReturnForm(false);
+    setReturnForm({ phone: "", email: "", reason: "" });
+    setToast("Return request submitted successfully.");
+  };
+
+  const updateReturnStatus = (requestId, nextStatus) => {
+    setReturnRequests((prev) =>
+      prev.map((req) => (req.id === requestId ? { ...req, status: nextStatus } : req))
+    );
+    setToast(`Return request ${nextStatus}.`);
   };
 
   useEffect(() => {
@@ -5263,6 +5301,59 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
+                  {!isAdmin && order.status === "Paid" && (
+                    <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: `1px solid ${tone.line}` }}>
+                      {(() => {
+                        const request = returnRequests.find((r) => r.orderId === order.id);
+                        if (request) {
+                          return (
+                            <div style={{ 
+                              display: "flex", 
+                              alignItems: "center", 
+                              justifyContent: "space-between",
+                              padding: "12px 16px",
+                              borderRadius: "12px",
+                              background: tone.soft,
+                              border: `1px solid ${tone.line}`
+                            }}>
+                              <span style={{ fontSize: "14px", fontWeight: 600 }}>Return Request Status:</span>
+                              <span
+                                style={{
+                                  padding: "4px 10px",
+                                  borderRadius: "999px",
+                                  fontSize: "12px",
+                                  fontWeight: 700,
+                                  background: request.status === "Approved" ? "#e8f5e9" : request.status === "Rejected" ? "#ffebee" : "#fff3e0",
+                                  color: request.status === "Approved" ? "#2e7d32" : request.status === "Rejected" ? "#c62828" : "#ef6c00",
+                                  border: `1px solid ${request.status === "Approved" ? "#a5d6a7" : request.status === "Rejected" ? "#ef9a9a" : "#ffcc80"}`
+                                }}
+                              >
+                                {request.status.toUpperCase()}
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <button
+                            onClick={() => {
+                              setSelectedReturnOrder(order);
+                              setShowReturnForm(true);
+                              setReturnForm({ ...returnForm, email: user.email });
+                            }}
+                            style={{
+                              ...secondaryButtonStyle,
+                              width: "100%",
+                              borderRadius: "12px",
+                              padding: "12px"
+                            }}
+                          >
+                            Return Product
+                          </button>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -7136,6 +7227,77 @@ export default function App() {
               </>
             )}
 
+            {adminTab === "returns" && (
+              <>
+                <h2 style={{ marginTop: 0 }}>Return Management</h2>
+                <div style={{ display: "grid", gap: "18px" }}>
+                  {returnRequests.length === 0 ? (
+                    <p style={{ color: tone.muted }}>No return requests found.</p>
+                  ) : (
+                    returnRequests.map((req) => (
+                      <div
+                        key={req.id}
+                        style={{
+                          border: `1px solid ${tone.line}`,
+                          borderRadius: "18px",
+                          padding: "20px",
+                          background: tone.white
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+                          <div>
+                            <h3 style={{ margin: "0 0 4px" }}>Request ID: {req.id}</h3>
+                            <p style={{ margin: "0 0 8px", color: tone.muted, fontSize: "14px" }}>
+                              Order ID: {req.orderId} | Requested on: {new Date(req.requestedAt).toLocaleString()}
+                            </p>
+                            <div style={{ display: "grid", gap: "4px", fontSize: "14px" }}>
+                              <strong>Customer Details:</strong>
+                              <span>Name: {req.customerName}</span>
+                              <span>Email: {req.customerEmail}</span>
+                              <span>Phone: {req.customerPhone}</span>
+                            </div>
+                          </div>
+                          <span
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: "999px",
+                              fontSize: "12px",
+                              fontWeight: 700,
+                              background: req.status === "Approved" ? "#e8f5e9" : req.status === "Rejected" ? "#ffebee" : "#fff3e0",
+                              color: req.status === "Approved" ? "#2e7d32" : req.status === "Rejected" ? "#c62828" : "#ef6c00",
+                              border: `1px solid ${req.status === "Approved" ? "#a5d6a7" : req.status === "Rejected" ? "#ef9a9a" : "#ffcc80"}`
+                            }}
+                          >
+                            {req.status.toUpperCase()}
+                          </span>
+                        </div>
+                        <div style={{ marginTop: "16px", padding: "14px", borderRadius: "14px", background: tone.soft, border: `1px solid ${tone.line}` }}>
+                          <strong>Reason for Return:</strong>
+                          <p style={{ margin: "6px 0 0", lineHeight: 1.6 }}>{req.reason}</p>
+                        </div>
+                        {req.status === "pending" && (
+                          <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
+                            <button
+                              onClick={() => updateReturnStatus(req.id, "Approved")}
+                              style={{ ...primaryButtonStyle, padding: "10px 20px", width: "auto" }}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => updateReturnStatus(req.id, "Rejected")}
+                              style={{ ...secondaryButtonStyle, padding: "10px 20px", width: "auto" }}
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+
             {adminTab === "settings" && (
               <>
                 <h2 style={{ marginTop: 0 }}>Settings</h2>
@@ -7846,6 +8008,82 @@ export default function App() {
           </button>
         </div>
       </nav>
+
+      {showReturnForm && selectedReturnOrder && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            backdropFilter: "blur(8px)",
+            zIndex: 2000,
+            display: "grid",
+            placeItems: "center",
+            padding: "20px"
+          }}
+        >
+          <div
+            style={{
+              ...cardStyle,
+              width: "min(100%, 480px)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              position: "relative"
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h2 style={{ margin: 0 }}>Return Request</h2>
+              <button
+                onClick={() => setShowReturnForm(false)}
+                className="icon-button"
+                style={{ ...rightIconButton, color: tone.body, borderColor: tone.line }}
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <p style={{ marginBottom: "20px", color: tone.muted }}>
+              Requesting return for Order: <strong>{selectedReturnOrder.id}</strong>
+            </p>
+
+            <div style={{ display: "grid", gap: "16px" }}>
+              <div style={{ display: "grid", gap: "6px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", color: tone.muted }}>Mobile Number</label>
+                <input
+                  value={returnForm.phone}
+                  onChange={(e) => setReturnForm({ ...returnForm, phone: e.target.value })}
+                  placeholder="Enter 10-digit mobile number"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ display: "grid", gap: "6px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", color: tone.muted }}>Email Address</label>
+                <input
+                  value={returnForm.email}
+                  onChange={(e) => setReturnForm({ ...returnForm, email: e.target.value })}
+                  placeholder="Enter your email"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ display: "grid", gap: "6px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", color: tone.muted }}>Return Reason</label>
+                <textarea
+                  value={returnForm.reason}
+                  onChange={(e) => setReturnForm({ ...returnForm, reason: e.target.value })}
+                  placeholder="Why are you returning this product?"
+                  style={{ ...inputStyle, minHeight: "120px", resize: "none" }}
+                />
+              </div>
+              <button
+                onClick={submitReturnRequest}
+                style={{ ...primaryButtonStyle, marginTop: "10px" }}
+              >
+                Request Return
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div
