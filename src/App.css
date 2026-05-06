@@ -16,7 +16,7 @@
   pointer-events: none;
   z-index: 0;
   border-radius: 999px;
-  filter: blur(12px);
+  filter: blur(0.92rem);
   opacity: 0;
 }
 
@@ -49,10 +49,10 @@
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   grid-template-areas: "left center right";
   align-items: center;
-  gap: 1rem 1.25rem;
-  padding: 1.15rem 1.5rem;
-  min-height: 6.2rem;
-  backdrop-filter: blur(18px);
+  gap: clamp(0.5rem, 2vw, 1.25rem);
+  padding: clamp(0.75rem, 1.5vw, 1.5rem) clamp(1rem, 2vw, 2rem);
+  min-height: clamp(5rem, 8vh, 7rem);
+  backdrop-filter: blur(1.38rem);
   transition: transform 240ms ease, background 240ms ease;
   will-change: transform;
 }
@@ -101,13 +101,13 @@
 
 .nav-dropdown {
   position: absolute;
-  top: 3rem;
+  top: 3.5rem;
   left: 0;
-  min-width: 15rem;
+  min-width: clamp(12rem, 20vw, 18rem);
   padding: 0.65rem;
   border-radius: 1.25rem;
   z-index: 1000;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 1.54rem 3.85rem rgba(0, 0, 0, 0.24);
 }
 
 .nav-dropdown__button {
@@ -213,10 +213,10 @@
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 999px;
   padding: 0 1.05rem;
-  height: 3rem;
-  width: min(15.5rem, 100%);
+  height: 3.2rem;
+  width: min(100%, 18rem);
   min-width: 0;
-  flex: 0 1 15.5rem;
+  flex: 0 1 clamp(10rem, 25vw, 18rem);
   overflow: visible;
   z-index: 140;
 }
@@ -415,11 +415,11 @@
 
 .admin-shell-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
-  gap: 22px;
+  grid-template-columns: minmax(min(100%, 17rem), 20rem) minmax(0, 1fr);
+  gap: clamp(1rem, 2.5vw, 2rem);
   align-items: start;
   content-visibility: auto;
-  contain-intrinsic-size: 1px 1000px;
+  contain-intrinsic-size: 0.08rem 76.92rem;
 }
 
 .admin-panel-card {
@@ -428,8 +428,8 @@
 
 .admin-split-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr));
+  gap: clamp(1rem, 2vw, 1.54rem);
   align-items: start;
 }
 
@@ -457,8 +457,8 @@
 
 .admin-media-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.15rem), 1fr));
+  gap: 0.92rem;
   min-width: 0;
 }
 
@@ -599,13 +599,13 @@
 
 .hero-media-banner__controls {
   position: absolute;
-  bottom: 2.5rem;
+  bottom: clamp(1.5rem, 5vh, 2.5rem);
   left: 50%;
   transform: translateX(-50%);
   display: flex; 
-  gap: 0.75rem;
+  gap: clamp(0.5rem, 1.5vw, 0.75rem);
   z-index: 20;
-  min-height: 12px; /* Prevent height collapse */
+  min-height: 0.92rem; /* Prevent height collapse */
 }
 
 .hero-media-banner__dot {
@@ -865,7 +865,7 @@
 
 .collection-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16.92rem), 1fr));
   gap: 1rem;
   margin-top: 1.5rem;
 }
@@ -914,6 +914,16 @@
   scroll-margin-top: 7rem;
 }
 
+@media (max-width: 768px) {
+  .product-detail-list__item--special strong {
+    font-size: 0.86rem !important;
+  }
+  #root .caption,
+  .catalog-section__description {
+    font-size: 0.86rem !important;
+  }
+}
+
 .section-heading {
   align-items: end;
 }
@@ -926,7 +936,7 @@
 .catalog-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.85rem;
+  gap: clamp(0.5rem, 1.5vw, 1.25rem);
   align-items: stretch;
   content-visibility: auto;
   contain-intrinsic-size: 1px 1200px;
@@ -939,10 +949,10 @@
 .product-card {
   position: relative;
   border: 1px solid rgba(17, 17, 17, 0.08);
-  border-radius: 1.35rem;
+  border-radius: clamp(1rem, 2vw, 1.35rem);
   background: #ffffff;
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.06);
-  backdrop-filter: blur(14px);
+  box-shadow: 0 1.08rem 2.3rem rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(1.08rem);
   box-sizing: border-box;
   overflow: hidden;
   min-height: 100%;
@@ -1111,14 +1121,14 @@
 }
 
 .product-page-shell {
-  width: min(100%, 1520px);
+  width: min(100%, 116.92rem);
   margin: 0 auto;
-  padding: 1.05rem 2rem 2.75rem;
+  padding: clamp(1rem, 2vw, 1.05rem) clamp(1.5rem, 3vw, 2rem) clamp(2rem, 5vw, 2.75rem);
 }
 
 .product-split-layout {
   display: grid;
-  grid-template-columns: minmax(16rem, 0.82fr) minmax(0, 1.55fr) minmax(15rem, 0.92fr);
+  grid-template-columns: minmax(min(100%, 16rem), 0.82fr) minmax(0, 1.55fr) minmax(min(100%, 15rem), 0.92fr);
   gap: clamp(1.25rem, 2.2vw, 2.2rem);
   align-items: start;
 }
@@ -1281,8 +1291,8 @@
   border-radius: 999px !important;
   text-transform: uppercase !important;
   letter-spacing: 0.18em !important;
-  font-size: 13px !important;
-  padding: 14px 24px !important;
+  font-size: 1rem !important;
+  padding: 1.08rem 1.85rem !important;
   width: 100% !important;
   cursor: pointer !important;
   font-weight: 700 !important;
@@ -1497,7 +1507,7 @@
 @keyframes page-in {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(1.54rem);
   }
 
   to {
@@ -1580,11 +1590,12 @@
 
 @media (min-width: 861px) and (max-width: 1180px) {
   .nav-shell {
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-columns: minmax(100px, 1fr) auto minmax(100px, 1fr);
     grid-template-areas: "left center right";
     gap: 0.75rem;
     padding-top: 1.42rem;
     padding-bottom: 1.42rem;
+    overflow: hidden;
   }
 
   .nav-shell__left,
@@ -1599,7 +1610,7 @@
 
   .brand-lockup {
     justify-self: center;
-    transform: translateX(-1.25rem);
+    transform: none;
   }
 
   .brand-lockup--media-only {
@@ -1607,8 +1618,8 @@
   }
 
   .brand-lockup__media-shell {
-    width: clamp(10.5rem, 17vw, 13.5rem);
-    height: clamp(4.6rem, 7vw, 5.8rem);
+    width: clamp(8rem, 14vw, 11rem);
+    height: clamp(3.8rem, 6vw, 5rem);
   }
 
   .nav-shell__right {
@@ -1619,18 +1630,18 @@
   }
 
   .nav-search {
-    width: clamp(10rem, 23vw, 15rem);
-    flex: 0 1 clamp(10rem, 23vw, 15rem);
+    width: clamp(8rem, 18vw, 12rem);
+    flex: 0 1 clamp(8rem, 18vw, 12rem);
   }
 
   .icon-button {
-    width: 50px !important;
-    height: 50px !important;
+    width: clamp(3rem, 5vw, 3.85rem) !important;
+    height: clamp(3rem, 5vw, 3.85rem) !important;
   }
 
   .icon-button svg {
-    width: 21px;
-    height: 21px;
+    width: clamp(1.2rem, 2vw, 1.62rem);
+    height: clamp(1.2rem, 2vw, 1.62rem);
   }
 }
 
@@ -1751,6 +1762,7 @@
   .brand-lockup__media-shell {
     width: clamp(9.5rem, 56vw, 12.75rem);
     height: clamp(4.35rem, 22vw, 5.3rem);
+    border-radius: 0.46rem;
   }
 
   .hero-title {
@@ -1815,8 +1827,8 @@
   }
 
   .product-card {
-    border-radius: 0.95rem;
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.05);
+    border-radius: clamp(0.75rem, 2vw, 0.95rem);
+    box-shadow: 0 0.77rem 1.85rem rgba(0, 0, 0, 0.05);
   }
 
   .product-card__flag {
@@ -1878,13 +1890,13 @@
     align-content: stretch;
     gap: 0.75rem;
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: visible;
     padding: 0 14vw 0.35rem 0;
     scroll-snap-type: x mandatory;
     overscroll-behavior-x: contain;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
-    touch-action: pan-x pan-y;
+    touch-action: pan-x;
   }
 
   .product-media-column::-webkit-scrollbar {
@@ -1901,6 +1913,7 @@
     height: clamp(21rem, 62vh, 34rem);
     align-items: stretch;
     scroll-snap-align: start;
+    touch-action: pan-x;
   }
 
   .product-media-frame,
@@ -1923,13 +1936,13 @@
   }
 
   .product-media-button,
-  .product-media-asset {
-    touch-action: pan-y pinch-zoom;
-  }
+    .product-media-asset {
+      touch-action: pan-x !important;
+    }
 
   .product-media-button {
-    pointer-events: none;
-    cursor: default;
+    pointer-events: auto !important;
+    cursor: zoom-in;
   }
 
   .product-side__title {
@@ -2043,39 +2056,39 @@
 }
 
 .home-footer__brand-line {
-  gap: 10px;
+  gap: 0.75rem;
   flex-wrap: wrap;
 }
 
 .home-footer__brand-name {
-  font-size: 14px;
+  font-size: 1.08rem;
 }
 
 .home-footer__powered-text {
-  font-size: 10px;
+  font-size: 0.77rem;
 }
 
 .home-footer__razorpay-logo,
 .footer-powered__logo {
   display: block;
-  height: 28px;
-  width: 112px;
+  height: 2.15rem;
+  width: 8.62rem;
   object-fit: cover;
   object-position: center;
 }
 
 .home-footer__razorpay-logo {
-  height: 24px;
-  width: 96px;
+  height: 1.85rem;
+  width: 7.38rem;
 }
 
 .site-footer__powered {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 0.75rem;
   line-height: 1;
-  transform: translateY(2px);
+  transform: translateY(0.15rem);
   white-space: nowrap;
 }
 
@@ -2083,42 +2096,42 @@
   display: inline-flex;
   align-items: center;
   line-height: 1;
-  transform: translateY(-2px);
+  transform: translateY(-0.15rem);
 }
 
 .site-footer__divider {
   align-self: center;
   flex: 0 0 auto;
-  transform: translateY(-2px);
+  transform: translateY(-0.15rem);
 }
 
 .site-footer__powered-text {
   display: inline-flex;
   align-items: center;
-  font-size: 8px;
+  font-size: 0.62rem;
   line-height: 1;
   opacity: 0.8;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.08rem;
 }
 
 .site-footer__powered-logo {
   display: block;
-  height: 120px;
+  height: 9.23rem;
   width: auto;
   flex: 0 0 auto;
   filter: none;
 }
 
 .payment-footer {
-  margin-top: 24px;
-  padding: 18px 20px;
+  margin-top: 1.85rem;
+  padding: 1.38rem 1.54rem;
   background: #050505;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 1.38rem;
   flex-wrap: wrap;
   box-sizing: border-box;
 }
@@ -2126,15 +2139,15 @@
 .payment-footer__icons {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.75rem;
   flex-wrap: wrap;
 }
 
 .payment-footer__icon-card {
-  width: 76px;
-  height: 42px;
-  padding: 8px 10px;
-  border-radius: 6px;
+  width: 5.85rem;
+  height: 3.23rem;
+  padding: 0.62rem 0.77rem;
+  border-radius: 0.46rem;
   background: #fff;
   display: flex;
   align-items: center;
@@ -2145,13 +2158,13 @@
 .payment-footer__icon {
   display: block;
   max-width: 100%;
-  max-height: 24px;
+  max-height: 1.85rem;
   object-fit: contain;
 }
 
 .footer-powered {
-  gap: 6px;
-  font-size: 11px;
+  gap: 0.46rem;
+  font-size: 0.85rem;
   white-space: nowrap;
 }
 
@@ -2171,65 +2184,65 @@
 /* Site Footer Responsive Optimizations */
 @media (max-width: 480px) {
   .site-footer {
-    padding: 8px 10px 6px !important;
+    padding: 0.62rem 0.77rem 0.46rem !important;
   }
 
   .site-footer__branding {
-    gap: 5px !important;
-    margin-bottom: -8px !important;
+    gap: 0.38rem !important;
+    margin-bottom: -0.62rem !important;
     align-items: center !important;
   }
 
   .site-footer__brand-name {
-    font-size: 12px !important;
+    font-size: 0.92rem !important;
     line-height: 1 !important;
-    transform: translateY(-1px) !important;
+    transform: translateY(-0.08rem) !important;
   }
 
   .site-footer__divider {
-    height: 10px !important;
-    transform: translateY(-1px) !important;
+    height: 0.77rem !important;
+    transform: translateY(-0.08rem) !important;
   }
 
   .site-footer__powered {
     display: inline-flex !important;
     align-items: center !important;
-    gap: 8px !important;
-    transform: translateY(1px) !important;
+    gap: 0.62rem !important;
+    transform: translateY(0.08rem) !important;
   }
 
   .site-footer__powered .site-footer__powered-text {
-    font-size: 7px !important;
+    font-size: 0.54rem !important;
     line-height: 1 !important;
   }
 
   .site-footer__powered-logo {
-    height: 70px !important;
+    height: 5.38rem !important;
     transform: none !important;
   }
 
   .site-footer__rule {
-    margin: -4px 0 1px !important;
+    margin: -0.31rem 0 0.08rem !important;
   }
 
   .site-footer div:nth-of-type(2) {
-    margin-bottom: 2px !important;
+    margin-bottom: 0.15rem !important;
   }
 
   .site-footer div:nth-of-type(2) span {
-    font-size: 8px !important;
+    font-size: 0.62rem !important;
   }
 
   .site-footer div:nth-of-type(2) svg {
-    width: 10px !important;
-    height: 10px !important;
+    width: 0.77rem !important;
+    height: 0.77rem !important;
   }
 
   .site-footer div:nth-of-type(3) {
-    gap: 8px !important;
+    gap: 0.62rem !important;
   }
 
   .site-footer div:nth-of-type(3) button {
-    font-size: 7.5px !important;
+    font-size: 0.58rem !important;
   }
 }
