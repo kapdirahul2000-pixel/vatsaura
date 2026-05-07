@@ -84,6 +84,30 @@ const loadRazorpayCheckout = () => {
   return razorpayCheckoutPromise;
 };
 
+const checkBackendAdminAccess = async (firebaseUser) => {
+  if (!firebaseUser) {
+    return { admin: false, denied: false, token: "", status: 0 };
+  }
+
+  const token = await firebaseUser.getIdToken(true);
+  const response = await fetch(buildApiUrl("/api/admin-check"), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  return {
+    admin: response.ok && payload.admin === true,
+    denied:
+      response.status === 403 ||
+      (response.ok && payload.admin === false),
+    status: response.status,
+    token
+  };
+};
+
 /** Turn Cloudinary public_id, partial paths, or bare upload paths into a full secure URL. */
 const resolveCloudinaryMediaUrl = (raw) => {
   const value = String(raw ?? "").trim();
@@ -1720,6 +1744,7 @@ export default function App() {
     readSessionValue(STORAGE_KEYS.adminSession, "")
   );
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
+  const [adminBackendAccess, setAdminBackendAccess] = useState(null);
   const [adminLoginForm, setAdminLoginForm] = useState({
     email: frontendAdminEmail,
     password: "",
@@ -2439,6 +2464,7 @@ export default function App() {
       return;
     }
 
+    setAdminBackendAccess(null);
     setHasAdminAccess(false);
     setAdminSecurityError("");
     setAdminSessionToken("");
@@ -2572,11 +2598,15 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
+        setAdminBackendAccess(null);
         setUser(null);
         return;
       }
 
       const email = normalizeEmail(firebaseUser.email);
+      if (!ADMIN_EMAILS.includes(email)) {
+        setAdminBackendAccess(null);
+      }
       const existing = usersRef.current.find(
         (entry) => normalizeEmail(entry.email) === email
       );
@@ -2999,9 +3029,31 @@ export default function App() {
   };
 
   const loginWithGoogle = async () => {
-      try {
+    try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const credentials = await signInWithPopup(auth, provider);
+      const signedInEmail = normalizeEmail(credentials?.user?.email);
+
+      if (ADMIN_EMAILS.includes(signedInEmail)) {
+        try {
+          const backendAdmin = await checkBackendAdminAccess(credentials.user);
+
+          if (backendAdmin.denied) {
+            console.warn("Backend admin check denied access for allowlisted admin login.");
+            setAdminBackendAccess(null);
+          } else if (backendAdmin.admin) {
+            setAdminBackendAccess(true);
+          } else {
+            setAdminBackendAccess(null);
+          }
+        } catch (error) {
+          console.error(error);
+          setAdminBackendAccess(null);
+        }
+      } else {
+        setAdminBackendAccess(null);
+      }
+
       setMenuOpen(false);
       setToast("Logged in successfully.");
     } catch (error) {
@@ -3016,6 +3068,7 @@ export default function App() {
         await endAdminSession();
       }
 
+      setAdminBackendAccess(null);
       await signOut(auth);
       setUser(null);
       setIsEditingProfile(false);

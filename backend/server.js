@@ -898,10 +898,21 @@ const assertValidPin = (pin) => {
 app.post("/api/admin-check", async (req, res) => {
   try {
     const verified = await verifyFirebaseAdminRequest(req);
-    res.json({ admin: Boolean(verified?.admin) });
+
+    if (!verified) {
+      res.status(401).json({ admin: false, error: "missing_token" });
+      return;
+    }
+
+    if (!verified.admin) {
+      res.status(403).json({ admin: false, error: "not_admin" });
+      return;
+    }
+
+    res.json({ admin: true });
   } catch (error) {
     console.error("Admin check failed:", error.message);
-    res.json({ admin: false });
+    res.status(401).json({ admin: false, error: "verification_failed" });
   }
 });
 
