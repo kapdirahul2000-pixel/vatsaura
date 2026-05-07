@@ -2981,7 +2981,7 @@ export default function App() {
       }
 
       const options = {
-        key: process.env.REACT_APP_RAZORPAY_KEY_ID || orderData.key_id || "rzp_test_SkuVtxf6Sv14Z3",
+        key: process.env.REACT_APP_RAZORPAY_KEY_ID || orderData.key_id || "rzp_live_SmMk7YKFu4mTU6",
         amount: orderData.amount,
         currency: orderData.currency,
         name: siteName,
