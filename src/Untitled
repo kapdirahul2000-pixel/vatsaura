@@ -3935,7 +3935,7 @@ export default function App() {
           <p style={{ margin: 0, color: tone.muted }}>
             {hasActiveSearch
               ? `Showing ${sectionProducts.length} result${sectionProducts.length === 1 ? "" : "s"} for "${searchTerm.trim()}".`
-              : "Explore the full devotional streetwear catalog beyond the featured homepage drops."}
+              : "Explore the full devotional streetwear catalog."}
           </p>
         </div>
         {!hasActiveSearch && menuItems.length > 0 && (

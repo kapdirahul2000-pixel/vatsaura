@@ -1087,12 +1087,6 @@
   line-height: 1.4;
 }
 
-.product-card__kalawa-note {
-  margin: 0.22rem 0 0;
-  color: #8a8a8a;
-  font-size: 0.72rem;
-  line-height: 1.35;
-}
 
 .product-card__wishlist {
   width: 3.5rem;
@@ -1874,9 +1868,6 @@
     font-size: 0.76rem;
   }
 
-  .product-card__kalawa-note {
-    font-size: 0.62rem;
-  }
 
   .product-card__wishlist {
     width: 2.15rem;

@@ -18,7 +18,6 @@ import {
   signOut
 } from "firebase/auth";
 import brandHeaderVideo from "./brand-header-video.mp4";
-import kalawaImage from "./assets/images/kalawa.png";
 import { buildApiUrl } from "./apiConfig";
 
 const ADMIN_EMAILS = [
@@ -274,8 +273,6 @@ const emptyProductForm = {
   mediaImages: [],
   videoData: ""
 };
-
-const DEFAULT_PRODUCT_DEPARTMENTS = ["tshirts"];
 
 const emptyUserForm = {
   name: "",
@@ -552,7 +549,6 @@ const DEFAULT_HOME_HIGHLIGHTS = [
 const defaultSettings = {
   websiteName: "VATSAURA",
   logoData: "",
-  productDepartments: DEFAULT_PRODUCT_DEPARTMENTS,
   tshirtCategories: DEFAULT_TSHIRT_CATEGORIES,
   latestDropProductIds: defaultProducts.slice(0, 4).map((product) => product.id),
   homeHighlights: DEFAULT_HOME_HIGHLIGHTS,
@@ -891,41 +887,6 @@ const sanitizeTshirtCategories = (categories) => {
   return normalized.length > 0 ? normalized : DEFAULT_TSHIRT_CATEGORIES;
 };
 
-const normalizeDepartmentName = (value) =>
-  String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-const sanitizeProductDepartments = (departments) => {
-  const fallback =
-    Array.isArray(departments) && departments.length > 0
-      ? departments
-      : DEFAULT_PRODUCT_DEPARTMENTS;
-
-  const normalized = fallback
-    .map(normalizeDepartmentName)
-    .filter(Boolean)
-    .filter((department, index, array) => array.indexOf(department) === index);
-
-  return normalized.length > 0 ? normalized : DEFAULT_PRODUCT_DEPARTMENTS;
-};
-
-const formatDepartmentLabel = (department) => {
-  const normalizedDepartment = normalizeDepartmentName(department);
-
-  if (normalizedDepartment === "tshirts") {
-    return "T-Shirts";
-  }
-
-  return normalizedDepartment
-    .split("-")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-};
-
 const normalizeBanner = (banner, index = 0) => {
   const rawTitle = String(banner?.title || "").trim();
   const rawSubtitle = String(banner?.subtitle || "").trim();
@@ -1022,7 +983,6 @@ const normalizeSettingsState = (storedSettings) => {
     websiteName:
       String(safeSettings.websiteName || "").trim() || defaultSettings.websiteName,
     logoData: safeSettings.logoData || defaultSettings.logoData,
-    productDepartments: sanitizeProductDepartments(safeSettings.productDepartments),
     tshirtCategories: sanitizeTshirtCategories(safeSettings.tshirtCategories),
     banners: normalizedStoredBanners,
     homeHighlights: normalizeStoredHomeHighlights(
@@ -1065,7 +1025,6 @@ const normalizeProductsState = (
   initialSettings = defaultSettings
 ) => {
   const categories = sanitizeTshirtCategories(initialSettings.tshirtCategories);
-  const departments = sanitizeProductDepartments(initialSettings.productDepartments);
   const safeProducts =
     Array.isArray(storedProducts) && storedProducts.length > 0
       ? storedProducts
@@ -1073,22 +1032,17 @@ const normalizeProductsState = (
 
   const normalizedProducts = safeProducts
     .map(normalizeProduct)
+    .filter((product) => product.department !== "shirts")
     .map((product, index) => {
       const normalizedCategory = normalizeCategoryName(product.category);
-      const normalizedDepartment = normalizeDepartmentName(product.department);
-      const safeDepartment = departments.includes(normalizedDepartment)
-        ? normalizedDepartment
-        : DEFAULT_PRODUCT_DEPARTMENTS[0];
 
       return {
         ...product,
-        department: safeDepartment,
+        department: "tshirts",
         category:
-          safeDepartment === "tshirts" && categories.includes(normalizedCategory)
+          categories.includes(normalizedCategory)
             ? normalizedCategory
-            : safeDepartment === "tshirts"
-              ? categories[index % categories.length] || DEFAULT_TSHIRT_CATEGORIES[0]
-              : normalizedCategory || "General"
+            : categories[index % categories.length] || DEFAULT_TSHIRT_CATEGORIES[0]
       };
     });
 
@@ -1097,20 +1051,14 @@ const normalizeProductsState = (
     : defaultProducts.map((product, index) => {
         const normalizedProduct = normalizeProduct(product);
         const normalizedCategory = normalizeCategoryName(normalizedProduct.category);
-        const normalizedDepartment = normalizeDepartmentName(normalizedProduct.department);
-        const safeDepartment = departments.includes(normalizedDepartment)
-          ? normalizedDepartment
-          : DEFAULT_PRODUCT_DEPARTMENTS[0];
 
         return {
           ...normalizedProduct,
-          department: safeDepartment,
+          department: "tshirts",
           category:
-            safeDepartment === "tshirts" && categories.includes(normalizedCategory)
+            categories.includes(normalizedCategory)
               ? normalizedCategory
-              : safeDepartment === "tshirts"
-                ? categories[index % categories.length] || DEFAULT_TSHIRT_CATEGORIES[0]
-                : normalizedCategory || "General"
+              : categories[index % categories.length] || DEFAULT_TSHIRT_CATEGORIES[0]
         };
       });
 };
@@ -1841,7 +1789,6 @@ export default function App() {
   });
   const [selectedAdminOrderId, setSelectedAdminOrderId] = useState("");
   const [categoryDraft, setCategoryDraft] = useState("");
-  const [departmentDraft, setDepartmentDraft] = useState("");
   const [navHidden, setNavHidden] = useState(false);
   const [zoomedMedia, setZoomedMedia] = useState(null);
   const [toast, setToast] = useState("");
@@ -1935,10 +1882,6 @@ export default function App() {
   const storeContactEmail = settings.contactEmail || defaultSettings.contactEmail;
   const storeAboutUs = settings.aboutUs || defaultSettings.aboutUs;
   const managedTshirtCategories = useMemo(() => sanitizeTshirtCategories(settings.tshirtCategories), [settings.tshirtCategories]);
-  const managedProductDepartments = useMemo(
-    () => sanitizeProductDepartments(settings.productDepartments),
-    [settings.productDepartments]
-  );
   const selectedProduct = useMemo(() => products.find((item) => item.id === selectedProductId) || null, [products, selectedProductId]);
   const enabledPaymentOptions = useMemo(() => paymentCatalog.filter(
     (option) => settings.paymentMethods?.[option.value]
@@ -1961,7 +1904,9 @@ export default function App() {
   const searchSuggestions = useMemo(() => hasActiveSearch
     ? products
         .filter(
-          (product) => buildProductSearchHaystack(product).includes(normalizedSearchTerm)
+          (product) =>
+            product.department === "tshirts" &&
+            buildProductSearchHaystack(product).includes(normalizedSearchTerm)
         )
         .sort((left, right) => {
           const rankDifference =
@@ -1984,27 +1929,18 @@ export default function App() {
         label: category
       }))
   ], [managedTshirtCategories]);
-  const departmentOptions = useMemo(
-    () =>
-      managedProductDepartments.map((department) => ({
-        value: department,
-        label: formatDepartmentLabel(department)
-      })),
-    [managedProductDepartments]
-  );
 
   const filteredProducts = useMemo(() => products
     .filter((product) => {
+      if (product.department !== "tshirts") {
+        return false;
+      }
+
       if (!hasActiveSearch && selectedDepartment !== "all" && product.department !== selectedDepartment) {
         return false;
       }
 
-      if (
-        !hasActiveSearch &&
-        selectedDepartment === "tshirts" &&
-        selectedCategory !== "all" &&
-        product.category !== selectedCategory
-      ) {
+      if (!hasActiveSearch && selectedCategory !== "all" && product.category !== selectedCategory) {
         return false;
       }
 
@@ -3750,11 +3686,7 @@ export default function App() {
 
   const buildEmptyProductForm = () => ({
     ...emptyProductForm,
-    department: managedProductDepartments[0] || DEFAULT_PRODUCT_DEPARTMENTS[0],
-    category:
-      (managedProductDepartments[0] || DEFAULT_PRODUCT_DEPARTMENTS[0]) === "tshirts"
-        ? managedTshirtCategories[0] || DEFAULT_TSHIRT_CATEGORIES[0]
-        : "General",
+    category: managedTshirtCategories[0] || DEFAULT_TSHIRT_CATEGORIES[0],
     mediaImages: [],
     videoData: "",
     imageData: ""
@@ -3915,85 +3847,11 @@ export default function App() {
     setToast("T-shirt category removed.");
   };
 
-  const addProductDepartment = () => {
-    const nextDepartment = normalizeDepartmentName(departmentDraft);
-
-    if (!nextDepartment) {
-      setToast("Enter a product section name.");
-      return;
-    }
-
-    if (managedProductDepartments.includes(nextDepartment)) {
-      setToast("This product section already exists.");
-      return;
-    }
-
-    setSettings((prev) => ({
-      ...prev,
-      productDepartments: [...sanitizeProductDepartments(prev.productDepartments), nextDepartment]
-    }));
-
-    setDepartmentDraft("");
-    setToast("Product section added.");
-  };
-
-  const removeProductDepartment = (departmentToRemove) => {
-    if (managedProductDepartments.length <= 1) {
-      setToast("Keep at least one product section.");
-      return;
-    }
-
-    const nextDepartments = managedProductDepartments.filter(
-      (department) => department !== departmentToRemove
-    );
-    const fallbackDepartment = nextDepartments[0] || DEFAULT_PRODUCT_DEPARTMENTS[0];
-
-    setSettings((prev) => ({
-      ...prev,
-      productDepartments: nextDepartments
-    }));
-
-    setProducts((prev) =>
-      prev.map((product) =>
-        product.department === departmentToRemove
-          ? {
-              ...product,
-              department: fallbackDepartment,
-              category:
-                fallbackDepartment === "tshirts"
-                  ? managedTshirtCategories[0] || DEFAULT_TSHIRT_CATEGORIES[0]
-                  : product.category || "General"
-            }
-          : product
-      )
-    );
-
-    setProductForm((prev) =>
-      prev.department === departmentToRemove
-        ? {
-            ...prev,
-            department: fallbackDepartment,
-            category:
-              fallbackDepartment === "tshirts"
-                ? managedTshirtCategories[0] || DEFAULT_TSHIRT_CATEGORIES[0]
-                : prev.category || "General"
-          }
-        : prev
-    );
-
-    if (selectedDepartment === departmentToRemove) {
-      setSelectedDepartment("all");
-      setSelectedCategory("all");
-    }
-
-    setToast("Product section removed.");
-  };
-
   const editProduct = (product) => {
     setProductForm({
       id: product.id,
       name: product.name,
-      department: normalizeDepartmentName(product.department) || DEFAULT_PRODUCT_DEPARTMENTS[0],
+      department: "tshirts",
       category: normalizeCategoryName(product.category),
       price: String(product.price),
       discount: String(product.discount),
@@ -4016,14 +3874,9 @@ export default function App() {
       return;
     }
 
-    const normalizedDepartment =
-      normalizeDepartmentName(productForm.department) || DEFAULT_PRODUCT_DEPARTMENTS[0];
     const normalizedCategory = normalizeCategoryName(productForm.category);
 
-    if (
-      normalizedDepartment === "tshirts" &&
-      !managedTshirtCategories.includes(normalizedCategory)
-    ) {
+    if (!managedTshirtCategories.includes(normalizedCategory)) {
       setToast("Pick a category from the T-shirt category manager.");
       return;
     }
@@ -4031,11 +3884,8 @@ export default function App() {
     const nextProduct = normalizeProduct({
       id: productForm.id || createId("prd"),
       name: productForm.name.trim(),
-      department: normalizedDepartment,
-      category:
-        normalizedDepartment === "tshirts"
-          ? normalizedCategory
-          : productForm.category.trim() || "General",
+      department: "tshirts",
+      category: normalizedCategory,
       price: Number(productForm.price),
       discount: Number(productForm.discount),
       stock: Number(productForm.stock),
@@ -4854,7 +4704,6 @@ export default function App() {
               <div className="product-card__text">
                 <h3 className="product-card__title">{product.name}</h3>
                 <p className="product-card__subtitle">{productSubtitle}</p>
-                <p className="product-card__kalawa-note">A symbol of who we are.</p>
               </div>
 
               <button
@@ -4902,7 +4751,7 @@ export default function App() {
           <p style={{ margin: 0, color: tone.muted }}>
             {hasActiveSearch
               ? `Showing ${sectionProducts.length} result${sectionProducts.length === 1 ? "" : "s"} for "${searchTerm.trim()}".`
-              : "Explore the full devotional streetwear catalog beyond the featured homepage drops."}
+              : "Explore the full premium tees catalog."}
           </p>
         </div>
         {!hasActiveSearch && menuItems.length > 0 && (
@@ -5450,11 +5299,6 @@ export default function App() {
                     padding: "18px"
                   }}
                 >
-                  {(() => {
-                    const cartProduct = products.find((product) => product.id === item.productId) || null;
-                    const cartImage = cartProduct ? getProductImages(cartProduct)[0] : "";
-
-                    return (
                   <div
                     style={{
                       display: "flex",
@@ -5463,34 +5307,17 @@ export default function App() {
                       gap: "14px"
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", minWidth: 0 }}>
-                      {cartImage ? (
-                        <img
-                          src={cartImage}
-                          alt={item.name}
-                          style={{
-                            width: "56px",
-                            height: "56px",
-                            objectFit: "cover",
-                            borderRadius: "12px",
-                            flexShrink: 0
-                          }}
-                        />
-                      ) : null}
-                      <div style={{ minWidth: 0 }}>
-                        <h3 style={{ margin: "0 0 8px" }}>{item.name}</h3>
-                        <p style={{ margin: "4px 0", color: tone.muted }}>
-                          {item.color} | {item.size} | Qty {item.quantity}
-                        </p>
-                        <p style={{ margin: 0, fontWeight: 700 }}>{formatCurrency(item.unitPrice * item.quantity)}</p>
-                      </div>
+                    <div>
+                      <h3 style={{ margin: "0 0 8px" }}>{item.name}</h3>
+                      <p style={{ margin: "4px 0", color: tone.muted }}>
+                        {item.color} | {item.size} | Qty {item.quantity}
+                      </p>
+                      <p style={{ margin: 0, fontWeight: 700 }}>{formatCurrency(item.unitPrice * item.quantity)}</p>
                     </div>
                     <button onClick={() => removeFromCart(item.cartId)} style={secondaryButtonStyle}>
                       Remove
                     </button>
                   </div>
-                    );
-                  })()}
 
                   <div style={{ display: "flex", gap: "10px", marginTop: "14px" }}>
                     <button onClick={() => updateCartQuantity(item.cartId, -1)} style={secondaryButtonStyle}>
@@ -5572,46 +5399,24 @@ export default function App() {
           <h2 style={{ marginTop: 0 }}>Delivery Summary</h2>
           <div style={{ display: "grid", gap: "12px" }}>
             {cart.map((item) => (
-              (() => {
-                const cartProduct = products.find((product) => product.id === item.productId) || null;
-                const cartImage = cartProduct ? getProductImages(cartProduct)[0] : "";
-
-                return (
-                  <div
-                    key={item.cartId}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: "12px",
-                      paddingBottom: "12px",
-                      borderBottom: `1px solid ${tone.line}`
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", minWidth: 0 }}>
-                      {cartImage ? (
-                        <img
-                          src={cartImage}
-                          alt={item.name}
-                          style={{
-                            width: "46px",
-                            height: "46px",
-                            objectFit: "cover",
-                            borderRadius: "10px",
-                            flexShrink: 0
-                          }}
-                        />
-                      ) : null}
-                      <div style={{ minWidth: 0 }}>
-                        <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{item.name}</p>
-                        <p style={{ margin: 0, color: tone.muted }}>
-                          {item.size} | {item.color} | Qty {item.quantity}
-                        </p>
-                      </div>
-                    </div>
-                    <span>{formatCurrency(item.unitPrice * item.quantity)}</span>
-                  </div>
-                );
-              })()
+              <div
+                key={item.cartId}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                  paddingBottom: "12px",
+                  borderBottom: `1px solid ${tone.line}`
+                }}
+              >
+                <div>
+                  <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{item.name}</p>
+                  <p style={{ margin: 0, color: tone.muted }}>
+                    {item.size} | {item.color} | Qty {item.quantity}
+                  </p>
+                </div>
+                <span>{formatCurrency(item.unitPrice * item.quantity)}</span>
+              </div>
             ))}
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: "16px", fontWeight: 800 }}>
@@ -5842,74 +5647,6 @@ export default function App() {
               {checkoutForm.city || "-"} {checkoutForm.pincode || ""}
             </p>
             <div style={{ display: "grid", gap: "14px" }}>
-              <div style={{ display: "grid", gap: "10px" }}>
-                {cart.map((item) => {
-                  const cartProduct = products.find((product) => product.id === item.productId) || null;
-                  const cartImage = cartProduct ? getProductImages(cartProduct)[0] : "";
-
-                  return (
-                    <div
-                      key={item.cartId}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: "12px"
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
-                        {cartImage ? (
-                          <img
-                            src={cartImage}
-                            alt={item.name}
-                            style={{
-                              width: "42px",
-                              height: "42px",
-                              objectFit: "cover",
-                              borderRadius: "10px",
-                              flexShrink: 0
-                            }}
-                          />
-                        ) : null}
-                        <div style={{ minWidth: 0 }}>
-                          <p style={{ margin: "0 0 2px", fontWeight: 700, fontSize: "14px" }}>{item.name}</p>
-                          <p style={{ margin: 0, color: tone.muted, fontSize: "12px" }}>
-                            {item.size} | {item.color}
-                          </p>
-                        </div>
-                      </div>
-                      <span style={{ fontSize: "13px", color: tone.muted }}>x{item.quantity}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "12px",
-                  padding: "10px 12px",
-                  borderRadius: "14px",
-                  background: tone.soft
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
-                  <img
-                    src={kalawaImage}
-                    alt="Free Kalawa"
-                    style={{
-                      width: "48px",
-                      height: "28px",
-                      objectFit: "cover",
-                      borderRadius: "999px",
-                      flexShrink: 0
-                    }}
-                  />
-                  <span style={{ fontSize: "14px", color: tone.body }}>Free Kalawa</span>
-                </div>
-                <span style={{ fontSize: "14px", color: tone.muted }}>Included</span>
-              </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Items</span>
                 <span>{cartCount}</span>
@@ -6329,7 +6066,7 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div style={{ display: "flex", alignItems: "center", gap: "14px", minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
                   {user.photo ? (
                     <img
                       src={user.photo}
@@ -6358,9 +6095,9 @@ export default function App() {
                       <UserIcon />
                     </div>
                   )}
-                  <div style={{ minWidth: 0, flex: 1 }}>
+                  <div>
                     <h3 style={{ margin: "0 0 4px" }}>{currentUserRecord?.name || user.name}</h3>
-                    <p style={{ margin: 0, color: tone.muted, overflowWrap: "anywhere", wordBreak: "break-word" }}>{user.email}</p>
+                    <p style={{ margin: 0, color: tone.muted }}>{user.email}</p>
                     {currentUserRecord?.phone && (
                       <p style={{ margin: "4px 0 0", fontSize: "13px", color: tone.muted }}>{currentUserRecord.phone}</p>
                     )}
@@ -6824,45 +6561,16 @@ export default function App() {
                 >
                   <div className="admin-stack">
                     <input value={productForm.name} onChange={(event) => setProductFormField("name", event.target.value)} placeholder="Product name" style={inputStyle} />
-                    <select
-                      value={productForm.department}
-                      onChange={(event) => {
-                        const nextDepartment = event.target.value;
-                        setProductForm((prev) => ({
-                          ...prev,
-                          department: nextDepartment,
-                          category:
-                            nextDepartment === "tshirts"
-                              ? managedTshirtCategories[0] || DEFAULT_TSHIRT_CATEGORIES[0]
-                              : prev.category === "General"
-                                ? prev.category
-                                : "General"
-                        }));
-                      }}
-                      style={selectStyle}
-                    >
-                      {departmentOptions.map((department) => (
-                        <option key={department.value} value={department.value}>
-                          {department.label}
+                    <select value="tshirts" onChange={() => undefined} style={selectStyle}>
+                      <option value="tshirts">T-Shirts</option>
+                    </select>
+                    <select value={productForm.category} onChange={(event) => setProductFormField("category", event.target.value)} style={selectStyle}>
+                      {availableProductCategories.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
                         </option>
                       ))}
                     </select>
-                    {productForm.department === "tshirts" ? (
-                      <select value={productForm.category} onChange={(event) => setProductFormField("category", event.target.value)} style={selectStyle}>
-                        {availableProductCategories.map((category) => (
-                          <option key={category} value={category}>
-                            {category}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        value={productForm.category}
-                        onChange={(event) => setProductFormField("category", event.target.value)}
-                        placeholder="Category"
-                        style={inputStyle}
-                      />
-                    )}
                     <textarea value={productForm.description} onChange={(event) => setProductFormField("description", event.target.value)} placeholder="Description" style={textareaStyle} />
                     <input value={productForm.colors} onChange={(event) => setProductFormField("colors", event.target.value)} placeholder="Colours: Black, White" style={inputStyle} />
                     <input value={productForm.sizes} onChange={(event) => setProductFormField("sizes", event.target.value)} placeholder="Sizes: S, M, L, XL" style={inputStyle} />
@@ -7092,71 +6800,12 @@ export default function App() {
                         display: "grid",
                         gap: "12px"
                       }}
-                      >
-                        <div>
-                          <h3 style={{ margin: "0 0 6px" }}>Manage Product Sections</h3>
-                          <p style={{ margin: 0, color: tone.muted }}>
-                            Add a future section here and it will appear beside T-Shirts in the top navigation.
-                          </p>
-                        </div>
-                        <div className="admin-input-action-grid">
-                          <input
-                            value={departmentDraft}
-                            onChange={(event) => setDepartmentDraft(event.target.value)}
-                            placeholder="Add section"
-                            style={inputStyle}
-                          />
-                          <button onClick={addProductDepartment} style={secondaryButtonStyle}>
-                            Add
-                          </button>
-                        </div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-                          {managedProductDepartments.map((department) => (
-                            <div
-                              key={department}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "10px",
-                                padding: "10px 12px",
-                                borderRadius: "999px",
-                                border: `1px solid ${tone.border}`,
-                                background: tone.white
-                              }}
-                            >
-                              <span>{formatDepartmentLabel(department)}</span>
-                              <button
-                                onClick={() => removeProductDepartment(department)}
-                                style={{
-                                  border: "none",
-                                  background: "transparent",
-                                  color: tone.muted,
-                                  cursor: "pointer",
-                                  fontWeight: 700
-                                }}
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                    <div
-                      style={{
-                        border: `1px solid ${tone.line}`,
-                        borderRadius: "18px",
-                        padding: "16px",
-                        background: tone.soft,
-                        display: "grid",
-                        gap: "12px"
-                      }}
                     >
                       <div>
-                          <h3 style={{ margin: "0 0 6px" }}>Manage T-Shirt Categories</h3>
-                          <p style={{ margin: 0, color: tone.muted }}>
-                            These options control the T-shirt menu and product category list.
-                          </p>
+                        <h3 style={{ margin: "0 0 6px" }}>Manage T-Shirt Categories</h3>
+                        <p style={{ margin: 0, color: tone.muted }}>
+                          These options control the T-shirt menu and product category list.
+                        </p>
                       </div>
                       <div className="admin-input-action-grid">
                         <input
@@ -8748,57 +8397,46 @@ export default function App() {
             <MenuIcon />
           </button>
 
-          {managedProductDepartments.map((department) => (
-            <div
-              key={department}
-              className="nav-menu-group"
-              style={{ position: "relative" }}
-              ref={department === "tshirts" ? tshirtRef : undefined}
+          <div className="nav-menu-group" style={{ position: "relative" }} ref={tshirtRef}>
+            <button
+              onClick={() => setShowTshirtMenu((prev) => !prev)}
+              className="nav-link-button"
             >
-              <button
-                onClick={() =>
-                  department === "tshirts"
-                    ? setShowTshirtMenu((prev) => !prev)
-                    : openDepartment(department, "all")
-                }
-                className="nav-link-button"
-              >
-                {formatDepartmentLabel(department)}
-              </button>
+              T-Shirts
+            </button>
 
-              {department === "tshirts" && showTshirtMenu && (
-                <div
-                  className="nav-dropdown"
-                  style={{
-                    background: tone.white,
-                    color: tone.body,
-                    border: `1px solid ${tone.line}`,
-                  }}
-                >
-                  {tshirtCategories.map((category) => (
-                    <button
-                      key={category.value}
-                      onClick={() => openDepartment("tshirts", category.value)}
-                      className="nav-dropdown__button"
-                      style={{
-                        background:
-                          selectedDepartment === "tshirts" && selectedCategory === category.value
-                            ? tone.black
-                            : "transparent",
-                        color:
-                          selectedDepartment === "tshirts" && selectedCategory === category.value
-                            ? tone.white
-                            : tone.body,
-                        cursor: "pointer"
-                      }}
-                    >
-                      {category.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+            {showTshirtMenu && (
+              <div
+                className="nav-dropdown"
+                style={{
+                  background: tone.white,
+                  color: tone.body,
+                  border: `1px solid ${tone.line}`,
+                }}
+              >
+                {tshirtCategories.map((category) => (
+                  <button
+                    key={category.value}
+                    onClick={() => openDepartment("tshirts", category.value)}
+                    className="nav-dropdown__button"
+                    style={{
+                      background:
+                        selectedDepartment === "tshirts" && selectedCategory === category.value
+                          ? tone.black
+                          : "transparent",
+                      color:
+                        selectedDepartment === "tshirts" && selectedCategory === category.value
+                          ? tone.white
+                          : tone.body,
+                      cursor: "pointer"
+                    }}
+                  >
+                    {category.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div
@@ -9121,7 +8759,7 @@ export default function App() {
             <div style={{ marginTop: "24px" }}>
               {user ? (
                 <>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                     {user.photo ? (
                       <img
                         src={user.photo}
@@ -9149,9 +8787,9 @@ export default function App() {
                         <UserIcon />
                       </div>
                     )}
-                    <div style={{ minWidth: 0, flex: 1 }}>
+                    <div>
                       <h3 style={{ margin: "0 0 4px" }}>{user.name}</h3>
-                      <p style={{ margin: 0, color: "#bdbdbd", fontSize: "13px", overflowWrap: "anywhere", wordBreak: "break-word" }}>{user.email}</p>
+                      <p style={{ margin: 0, color: "#bdbdbd", fontSize: "13px" }}>{user.email}</p>
                     </div>
                   </div>
                 </>
@@ -9246,8 +8884,7 @@ export default function App() {
               alignItems: "center", 
               justifyContent: "center", 
               gap: "16px",
-              marginTop: "4px",
-              marginBottom: "0"
+              marginBottom: "-4px"
             }}>
               <span className="site-footer__brand-name" style={{ 
                 fontSize: "18px", 
@@ -9262,14 +8899,13 @@ export default function App() {
               </div>
             </div>
 
-            <hr className="site-footer__rule" style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.15)", margin: "2px 0 8px" }} />
+            <hr className="site-footer__rule" style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.15)", margin: "-2px 0 2px" }} />
 
             <div style={{ 
               display: "flex", 
               alignItems: "center", 
               justifyContent: "center", 
               gap: "8px", 
-              marginTop: "2px",
               marginBottom: "4px",
               opacity: 0.9
             }}>
