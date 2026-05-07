@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && (
+        request.auth.token.admin == true ||
+        request.auth.token.role == "admin" ||
+        request.auth.token.email in [
+          "kapdirahul2000@gmail.com",
+          "vatsaurateam@gmail.com"
+        ]
+      );
+    }
+
+    function isCurrentUserEmail(email) {
+      return signedIn() &&
+        email is string &&
+        request.auth.token.email is string &&
+        request.auth.token.email == email;
+    }
+
+    function isOrderOwner(data) {
+      return signedIn() && (
+        (data.userUid is string && data.userUid == request.auth.uid) ||
+        (data.userEmail is string && isCurrentUserEmail(data.userEmail))
+      );
+    }
+
+    match /appState/primary {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isAdmin() || isCurrentUserEmail(userId);
+      allow create: if isAdmin() || (
+        isCurrentUserEmail(userId) &&
+        request.resource.data.email is string &&
+        request.resource.data.email == userId
+      );
+      allow update: if isAdmin() || (
+        isCurrentUserEmail(userId) &&
+        resource.data.email is string &&
+        resource.data.email == userId &&
+        request.resource.data.email is string &&
+        request.resource.data.email == userId
+      );
+      allow delete: if isAdmin() || isCurrentUserEmail(userId);
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAdmin() || isOrderOwner(resource.data);
+      allow create: if isAdmin() || isOrderOwner(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+  }
+}

@@ -1,7 +1,16 @@
 import React, { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { auth, db } from "./firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  setDoc,
+  where
+} from "firebase/firestore";
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -16,6 +25,8 @@ const ADMIN_EMAILS = [
   "vatsaurateam@gmail.com"
 ];
 
+const ADMIN_PANEL_PASSWORD = "Radheradhe@13";
+
 const STORAGE_KEYS = {
   cart: "vatsauraCart",
   wishlist: "vatsauraWishlist",
@@ -24,6 +35,12 @@ const STORAGE_KEYS = {
   products: "vatsauraProducts",
   settings: "vatsauraSettings",
   adminSession: "vatsauraAdminSession"
+};
+const FIRESTORE_PATHS = {
+  publicStoreCollection: "appState",
+  publicStoreDocument: "primary",
+  ordersCollection: "orders",
+  usersCollection: "users"
 };
 
 const CLOUDINARY_CLOUD_NAME = "dcm5dhh8e";
@@ -65,26 +82,6 @@ const loadRazorpayCheckout = () => {
   });
 
   return razorpayCheckoutPromise;
-};
-
-const checkBackendAdminAccess = async (firebaseUser) => {
-  if (!firebaseUser) {
-    return { admin: false, token: "" };
-  }
-
-  const token = await firebaseUser.getIdToken(true);
-  const response = await fetch(buildApiUrl("/api/admin-check"), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
-  });
-  const payload = await response.json().catch(() => ({}));
-
-  return {
-    admin: response.ok && payload.admin === true,
-    token
-  };
 };
 
 /** Turn Cloudinary public_id, partial paths, or bare upload paths into a full secure URL. */
@@ -386,7 +383,6 @@ const adminTabs = [
   { key: "users", label: "Users" },
   { key: "products", label: "Products" },
   { key: "orders", label: "Orders" },
-  { key: "returns", label: "Return Management" },
   { key: "content", label: "Content" },
   { key: "settings", label: "Settings" }
 ];
@@ -718,10 +714,8 @@ const writePersistentStore = async (value) => {
   });
 };
 
-const writeLegacyStoreSnapshot = ({ orders, products, users, settings }) => {
-  writeStorage(STORAGE_KEYS.orders, orders);
+const writeLegacyStoreSnapshot = ({ products, settings }) => {
   writeStorage(STORAGE_KEYS.products, products);
-  writeStorage(STORAGE_KEYS.users, users);
   writeStorage(STORAGE_KEYS.settings, settings);
 };
 
@@ -1063,6 +1057,116 @@ const isVideoSource = (source) => {
 const createId = (prefix) =>
   `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
 
+const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+
+const normalizePhone = (value) => String(value || "").replace(/\D/g, "");
+
+const buildUserDocId = (email) => normalizeEmail(email);
+
+const createOrderId = () => {
+  const datePrefix = new Date()
+    .toISOString()
+    .slice(0, 10)
+    .replace(/-/g, "");
+
+  try {
+    const bytes = new Uint32Array(2);
+    window.crypto.getRandomValues(bytes);
+    return `VA-${datePrefix}-${bytes[0].toString(36)}${bytes[1].toString(36)}`.toUpperCase();
+  } catch (_error) {
+    return `VA-${datePrefix}-${createId("ord").replace(/^ord-/, "").toUpperCase()}`;
+  }
+};
+
+const buildPublicStoreSnapshot = ({ products, settings, updatedAt = Date.now() }) => ({
+  version: 2,
+  updatedAt,
+  products,
+  settings
+});
+
+const normalizeUserRecord = (record = {}) => {
+  const email = normalizeEmail(record.email);
+  const fallbackName = email ? email.split("@")[0] : "Customer";
+  const role = ADMIN_EMAILS.includes(email) ? "admin" : (record.role || "customer");
+
+  return {
+    id: record.id || createId("usr"),
+    uid: String(record.uid || ""),
+    name: String(record.name || fallbackName).trim() || fallbackName,
+    email,
+    phone: String(record.phone || "").trim(),
+    gender: String(record.gender || "").trim(),
+    birthdate: String(record.birthdate || "").trim(),
+    photo: String(record.photo || "").trim(),
+    role,
+    status: record.status === "blocked" ? "blocked" : "active",
+    joinedAt: Number(record.joinedAt) || Date.now(),
+    lastLoginAt: record.lastLoginAt ? Number(record.lastLoginAt) : null,
+    auraPoints: Number(record.auraPoints || 0),
+    totalSpent: Number(record.totalSpent || 0),
+    totalOrders: Number(record.totalOrders || 0),
+    auraHistory: Array.isArray(record.auraHistory) ? record.auraHistory : []
+  };
+};
+
+const normalizeOrderRecord = (record = {}) => {
+  const customer = {
+    ...initialCheckoutForm,
+    ...(record.customer && typeof record.customer === "object" ? record.customer : {})
+  };
+  const userEmail = normalizeEmail(record.userEmail || customer.email);
+  const userPhone = normalizePhone(record.userPhone || customer.phone);
+
+  return {
+    ...record,
+    id: String(record.id || createOrderId()),
+    createdAt: Number(record.createdAt) || Date.now(),
+    dateLabel:
+      String(record.dateLabel || "").trim() ||
+      new Date(Number(record.createdAt) || Date.now()).toLocaleString("en-IN"),
+    userUid: String(record.userUid || ""),
+    userEmail,
+    userPhone,
+    status: String(record.status || "Pending Payment").trim(),
+    items: Array.isArray(record.items) ? record.items : [],
+    total: Number(record.total || 0),
+    codCharge: Number(record.codCharge || 0),
+    auraPointsUsed: Number(record.auraPointsUsed || 0),
+    remainingPayable: Number(record.remainingPayable ?? record.total ?? 0),
+    refundRequested: Boolean(record.refundRequested),
+    returnRequested: Boolean(record.returnRequested),
+    customer: {
+      ...customer,
+      email: userEmail || String(customer.email || "").trim(),
+      phone: String(customer.phone || "").trim()
+    }
+  };
+};
+
+const sortOrdersNewestFirst = (records) =>
+  [...(Array.isArray(records) ? records : [])]
+    .map((entry) => normalizeOrderRecord(entry))
+    .filter(
+      (entry, index, array) => array.findIndex((candidate) => candidate.id === entry.id) === index
+    )
+    .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
+
+const doesOrderBelongToUser = (order, userRecord) => {
+  const orderUid = String(order?.userUid || "").trim();
+  const orderEmail = normalizeEmail(order?.userEmail || order?.customer?.email);
+  const orderPhone = normalizePhone(order?.userPhone || order?.customer?.phone);
+  const userUid = String(userRecord?.uid || "").trim();
+  const email = normalizeEmail(userRecord?.email);
+  const phone = normalizePhone(userRecord?.phone);
+
+  return Boolean(
+    (userUid && orderUid && userUid === orderUid) ||
+      (email && orderEmail && email === orderEmail) ||
+      (phone && orderPhone && phone === orderPhone)
+  );
+};
+
 const formatCurrency = (amount) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -1211,23 +1315,19 @@ const getProductSearchRank = (product, searchValue) => {
 };
 
 const mergeAdminUsers = (storedUsers) => {
-  const safeUsers = Array.isArray(storedUsers) ? storedUsers : [];
+  const safeUsers = (Array.isArray(storedUsers) ? storedUsers : []).map((entry) =>
+    normalizeUserRecord(entry)
+  );
   const adminEntries = ADMIN_EMAILS.map((email) => {
     const existing = safeUsers.find(
       (item) => item.email?.toLowerCase() === email.toLowerCase()
     );
 
-    return {
-      id: existing?.id || createId("usr"),
-      name: existing?.name || email.split("@")[0],
+    return normalizeUserRecord({
+      ...existing,
       email,
-      role: "admin",
-      status: existing?.status || "active",
-      photo: existing?.photo || "",
-      auraPoints: Number(existing?.auraPoints || 0),
-      joinedAt: existing?.joinedAt || Date.now(),
-      lastLoginAt: existing?.lastLoginAt || null
-    };
+      role: "admin"
+    });
   });
 
   const nonAdmins = safeUsers.filter(
@@ -1642,14 +1742,6 @@ export default function App() {
     reason: "",
     targetUserEmail: ""
   });
-  const [returnRequests, setReturnRequests] = useState([]);
-  const [showReturnForm, setShowReturnForm] = useState(false);
-  const [selectedReturnOrder, setSelectedReturnOrder] = useState(null);
-  const [returnForm, setReturnForm] = useState({
-    phone: "",
-    email: "",
-    reason: ""
-  });
   const [, setRazorpayLoading] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -1663,15 +1755,15 @@ export default function App() {
   const [wishlist, setWishlist] = useState(() =>
     normalizeWishlist(readStorage(STORAGE_KEYS.wishlist, []))
   );
-  const [orders, setOrders] = useState(() => readStorage(STORAGE_KEYS.orders, []));
+  const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState(createInitialProducts);
-  const [users, setUsers] = useState(() =>
-    mergeAdminUsers(readStorage(STORAGE_KEYS.users, []))
-  );
+  const [users, setUsers] = useState(() => mergeAdminUsers([]));
   const [settings, setSettings] = useState(createInitialSettings);
   const [storeHydrated, setStoreHydrated] = useState(false);
 
   const usersRef = useRef(users);
+  const legacyOrdersRef = useRef([]);
+  const legacyUsersRef = useRef([]);
   const drawerRef = useRef(null);
   const tshirtRef = useRef(null);
   const searchRef = useRef(null);
@@ -1683,13 +1775,14 @@ export default function App() {
   const lastAuthenticatedEmailRef = useRef("");
 
   const userEmail = String(user?.email || "").toLowerCase();
-  const isAdminOwner = user?.role === "admin";
+  const isAdminOwner = Boolean(userEmail) && ADMIN_EMAILS.includes(userEmail);
   const isAdmin = isAdminOwner && hasAdminAccess;
   const activeAdminEmail = isAdminOwner ? userEmail : frontendAdminEmail;
   const currentUserRecord = useMemo(() => 
     users.find((entry) => entry.email?.toLowerCase() === userEmail),
     [users, userEmail]
   );
+  const uniqueOrders = useMemo(() => sortOrdersNewestFirst(orders), [orders]);
   const auraPoints = useMemo(() => Number(currentUserRecord?.auraPoints || 0), [currentUserRecord]);
   const siteName = settings.websiteName || defaultSettings.websiteName;
   const storeTermsAndConditions =
@@ -1707,10 +1800,10 @@ export default function App() {
     (total, item) => total + Number(item.unitPrice || 0) * Number(item.quantity || 0),
     0
   ), [cart]);
-  const dailySales = useMemo(() => getRangeTotal(orders, startOfToday()), [orders]);
-  const weeklySales = useMemo(() => getRangeTotal(orders, startOfWeek()), [orders]);
-  const monthlySales = useMemo(() => getRangeTotal(orders, startOfMonth()), [orders]);
-  const totalSales = useMemo(() => sumSales(orders), [orders]);
+  const dailySales = useMemo(() => getRangeTotal(uniqueOrders, startOfToday()), [uniqueOrders]);
+  const weeklySales = useMemo(() => getRangeTotal(uniqueOrders, startOfWeek()), [uniqueOrders]);
+  const monthlySales = useMemo(() => getRangeTotal(uniqueOrders, startOfMonth()), [uniqueOrders]);
+  const totalSales = useMemo(() => sumSales(uniqueOrders), [uniqueOrders]);
   const brandMediaSource = settings.logoData
     ? resolveCloudinaryMediaUrl(settings.logoData)
     : brandHeaderVideo;
@@ -1785,8 +1878,8 @@ export default function App() {
   const productFormImages = getProductImages(productForm);
   const productFormVideo = getProductVideo(productForm);
   const selectedAdminOrder = useMemo(() => 
-    orders.find((order) => order.id === selectedAdminOrderId) || orders[0] || null,
-    [orders, selectedAdminOrderId]
+    uniqueOrders.find((order) => order.id === selectedAdminOrderId) || uniqueOrders[0] || null,
+    [uniqueOrders, selectedAdminOrderId]
   );
   const managedHomepageBanners = useMemo(() => normalizeStoredBanners(settings.banners), [settings.banners]);
   const homepageBanners = useMemo(() => 
@@ -1841,6 +1934,171 @@ export default function App() {
   }, [users]);
 
   useEffect(() => {
+    if (!storeHydrated) {
+      return undefined;
+    }
+
+    const migrateUserRecord = async (record) => {
+      const nextUser = normalizeUserRecord(record);
+
+      if (!nextUser.email) {
+        return;
+      }
+
+      await setDoc(
+        doc(db, FIRESTORE_PATHS.usersCollection, buildUserDocId(nextUser.email)),
+        nextUser
+      );
+    };
+
+    const migrateOrderRecords = async (records) => {
+      const uniqueOrders = sortOrdersNewestFirst(records).filter(
+        (entry, index, array) => array.findIndex((candidate) => candidate.id === entry.id) === index
+      );
+
+      await Promise.all(
+        uniqueOrders.map((entry) =>
+          setDoc(
+            doc(db, FIRESTORE_PATHS.ordersCollection, entry.id),
+            normalizeOrderRecord(entry)
+          )
+        )
+      );
+    };
+
+    if (!user || !userEmail) {
+      setUsers([]);
+      setOrders([]);
+      return undefined;
+    }
+
+    const fallbackUserRecord = normalizeUserRecord(
+      legacyUsersRef.current.find((entry) => normalizeEmail(entry.email) === userEmail) || {
+        id: createId("usr"),
+        uid: user.uid,
+        name: user.displayName || userEmail.split("@")[0],
+        email: userEmail,
+        phone: "",
+        gender: "",
+        birthdate: "",
+        photo: getFirebaseProfilePhotoUrl(user) || "",
+        role: ADMIN_EMAILS.includes(userEmail) ? "admin" : "customer",
+        status: "active",
+        joinedAt: Date.now(),
+        lastLoginAt: Date.now(),
+        auraPoints: ADMIN_EMAILS.includes(userEmail) ? 0 : 100
+      }
+    );
+    const scopedLegacyOrders = sortOrdersNewestFirst(
+      legacyOrdersRef.current.filter((entry) => doesOrderBelongToUser(entry, fallbackUserRecord))
+    );
+
+    let cancelled = false;
+
+    const usersTarget = isAdmin
+      ? collection(db, FIRESTORE_PATHS.usersCollection)
+      : doc(db, FIRESTORE_PATHS.usersCollection, buildUserDocId(userEmail));
+    const ordersTarget = isAdmin
+      ? collection(db, FIRESTORE_PATHS.ordersCollection)
+      : query(
+          collection(db, FIRESTORE_PATHS.ordersCollection),
+          where("userEmail", "==", userEmail)
+        );
+
+    const unsubscribeUsers = onSnapshot(
+      usersTarget,
+      (snapshot) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (isAdmin) {
+          const remoteUsers = snapshot.docs.map((entry) =>
+            normalizeUserRecord(entry.data())
+          );
+
+          if (snapshot.empty && legacyUsersRef.current.length > 0) {
+            setUsers(mergeAdminUsers(legacyUsersRef.current));
+            migrateUserRecord(fallbackUserRecord).catch((error) =>
+              console.warn("User migration skipped:", error?.message || error)
+            );
+            Promise.all(legacyUsersRef.current.map((entry) => migrateUserRecord(entry))).catch(
+              (error) => console.warn("Legacy user migration skipped:", error?.message || error)
+            );
+            return;
+          }
+
+          setUsers(mergeAdminUsers(remoteUsers));
+          return;
+        }
+
+        if (snapshot.exists()) {
+          const remoteUser = normalizeUserRecord(snapshot.data());
+          setUsers([remoteUser]);
+          return;
+        }
+
+        setUsers([fallbackUserRecord]);
+        migrateUserRecord(fallbackUserRecord).catch((error) =>
+          console.warn("User bootstrap skipped:", error?.message || error)
+        );
+      },
+      (error) => {
+        console.warn("User sync skipped:", error?.message || error);
+        setUsers(isAdmin ? mergeAdminUsers(legacyUsersRef.current) : [fallbackUserRecord]);
+      }
+    );
+
+    const unsubscribeOrders = onSnapshot(
+      ordersTarget,
+      (snapshot) => {
+        if (cancelled) {
+          return;
+        }
+
+        const remoteOrders = sortOrdersNewestFirst(snapshot.docs.map((entry) => entry.data()));
+
+        if (!isAdmin) {
+          const ownedOrders = remoteOrders.filter((entry) =>
+            doesOrderBelongToUser(entry, fallbackUserRecord)
+          );
+
+          if (snapshot.empty && scopedLegacyOrders.length > 0) {
+            setOrders(scopedLegacyOrders);
+            migrateOrderRecords(scopedLegacyOrders).catch((error) =>
+              console.warn("Legacy order migration skipped:", error?.message || error)
+            );
+            return;
+          }
+
+          setOrders(ownedOrders);
+          return;
+        }
+
+        if (snapshot.empty && legacyOrdersRef.current.length > 0) {
+          setOrders(sortOrdersNewestFirst(legacyOrdersRef.current));
+          migrateOrderRecords(legacyOrdersRef.current).catch((error) =>
+            console.warn("Admin order migration skipped:", error?.message || error)
+          );
+          return;
+        }
+
+        setOrders(remoteOrders);
+      },
+      (error) => {
+        console.warn("Order sync skipped:", error?.message || error);
+        setOrders(isAdmin ? sortOrdersNewestFirst(legacyOrdersRef.current) : scopedLegacyOrders);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribeUsers();
+      unsubscribeOrders();
+    };
+  }, [storeHydrated, isAdmin, user, userEmail]);
+
+  useEffect(() => {
     const normalizedEmail = String(user?.email || "").trim().toLowerCase();
 
     if (normalizedEmail) {
@@ -1879,7 +2137,13 @@ export default function App() {
       let cloudSnapshot = null;
 
       try {
-        const cloudDoc = await getDoc(doc(db, "appState", "primary"));
+        const cloudDoc = await getDoc(
+          doc(
+            db,
+            FIRESTORE_PATHS.publicStoreCollection,
+            FIRESTORE_PATHS.publicStoreDocument
+          )
+        );
 
         if (cloudDoc.exists()) {
           const data = cloudDoc.data();
@@ -1925,8 +2189,6 @@ export default function App() {
           readStorage(STORAGE_KEYS.settings, defaultSettings)
         );
         const fallbackProducts = readStorage(STORAGE_KEYS.products, defaultProducts);
-        const fallbackUsers = readStorage(STORAGE_KEYS.users, []);
-        const fallbackOrders = readStorage(STORAGE_KEYS.orders, []);
 
         const nextSettings = normalizeSettingsState(
           snapshot.settings !== undefined ? snapshot.settings : fallbackSettings
@@ -1934,18 +2196,17 @@ export default function App() {
 
         const productSeed =
           snapshot.products !== undefined ? snapshot.products : fallbackProducts;
-        const userSeed =
-          snapshot.users !== undefined ? snapshot.users : fallbackUsers;
-        const orderSeedRaw =
-          snapshot.orders !== undefined ? snapshot.orders : fallbackOrders;
-        const orderSeed = Array.isArray(orderSeedRaw) ? orderSeedRaw : [];
+        const userSeed = Array.isArray(snapshot.users) ? snapshot.users : [];
+        const orderSeed = Array.isArray(snapshot.orders) ? snapshot.orders : [];
+
+        legacyUsersRef.current = mergeAdminUsers(userSeed);
+        legacyOrdersRef.current = sortOrdersNewestFirst(orderSeed);
 
         startTransition(() => {
           setSettings(nextSettings);
           setProducts(normalizeProductsState(productSeed, nextSettings));
-          setUsers(mergeAdminUsers(userSeed));
-
-          setOrders(orderSeed);
+          setUsers([]);
+          setOrders([]);
         });
 
         if (snapshotFreshness(snapshot) > 0) {
@@ -1980,14 +2241,11 @@ export default function App() {
       return undefined;
     }
 
-    const snapshot = {
-      version: 1,
-      updatedAt: Date.now(),
-      orders,
+    const snapshot = buildPublicStoreSnapshot({
       products,
-      users,
-      settings
-    };
+      settings,
+      updatedAt: Date.now()
+    });
 
     const persistStore = async () => {
       try {
@@ -2003,10 +2261,19 @@ export default function App() {
         writeLegacyStoreSnapshot(snapshot);
       }
 
-      try {
-        await setDoc(doc(db, "appState", "primary"), snapshot);
-      } catch (error) {
-        console.warn("Cloud storefront save queued or failed:", error?.message || error);
+      if (isAdmin) {
+        try {
+          await setDoc(
+            doc(
+              db,
+              FIRESTORE_PATHS.publicStoreCollection,
+              FIRESTORE_PATHS.publicStoreDocument
+            ),
+            snapshot
+          );
+        } catch (error) {
+          console.warn("Cloud storefront save queued or failed:", error?.message || error);
+        }
       }
     };
 
@@ -2025,7 +2292,7 @@ export default function App() {
         persistentSaveTimerRef.current = null;
       }
     };
-  }, [storeHydrated, orders, products, users, settings]);
+  }, [storeHydrated, isAdmin, products, settings]);
 
   useEffect(() => {
     writeSessionValue(STORAGE_KEYS.adminSession, adminSessionToken);
@@ -2186,24 +2453,11 @@ export default function App() {
     const storedUnlock = readSessionValue(STORAGE_KEYS.adminSession, "");
 
     if (storedUnlock && storedUnlock === userEmail) {
-      checkBackendAdminAccess(auth.currentUser)
-        .then((backendAdmin) => {
-          if (!backendAdmin.admin) {
-            throw new Error("Admin access denied.");
-          }
-
-          startTransition(() => {
-            setAdminSessionToken(backendAdmin.token);
-            setHasAdminAccess(true);
-            setAdminAuthStep("authenticated");
-          });
-        })
-        .catch(() => {
-          writeSessionValue(STORAGE_KEYS.adminSession, "");
-          setAdminSessionToken("");
-          setHasAdminAccess(false);
-          setAdminAuthStep("loginPassword");
-        });
+      startTransition(() => {
+        setAdminSessionToken(userEmail);
+        setHasAdminAccess(true);
+        setAdminAuthStep("authenticated");
+      });
     } else if (storedUnlock && storedUnlock !== userEmail) {
       writeSessionValue(STORAGE_KEYS.adminSession, "");
       setAdminSessionToken("");
@@ -2318,13 +2572,13 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
-          setUser(null);
+        setUser(null);
         return;
       }
 
-      const email = String(firebaseUser.email || "").toLowerCase();
+      const email = normalizeEmail(firebaseUser.email);
       const existing = usersRef.current.find(
-        (entry) => entry.email?.toLowerCase() === email
+        (entry) => normalizeEmail(entry.email) === email
       );
 
       if (existing?.status === "blocked") {
@@ -2334,37 +2588,43 @@ export default function App() {
           return;
         }
 
-      let backendAdmin = { admin: false, token: "" };
-
-      try {
-        backendAdmin = await checkBackendAdminAccess(firebaseUser);
-      } catch (error) {
-        console.error("Admin check failed:", error);
-      }
-
-      const nextUser = {
+      const nextUser = normalizeUserRecord({
+        ...existing,
         id: existing?.id || createId("usr"),
+        uid: firebaseUser.uid,
         name: existing?.name || firebaseUser.displayName || email.split("@")[0],
         email,
         phone: existing?.phone || "",
         gender: existing?.gender || "",
         birthdate: existing?.birthdate || "",
         photo: getFirebaseProfilePhotoUrl(firebaseUser) || existing?.photo || "",
-        role: backendAdmin.admin ? "admin" : "customer",
+        role: ADMIN_EMAILS.includes(email) ? "admin" : "customer",
         status: "active",
         joinedAt: existing?.joinedAt || Date.now(),
         lastLoginAt: Date.now(),
         auraPoints:
           existing?.auraPoints !== undefined
             ? Number(existing.auraPoints)
-            : 0
-      };
+            : ADMIN_EMAILS.includes(email)
+              ? 0
+              : 100
+      });
 
-        setUsers((prev) => [
+      setUsers((prev) => [
+        nextUser,
+        ...prev.filter((entry) => normalizeEmail(entry.email) !== email)
+      ]);
+      setUser(nextUser);
+
+      try {
+        await setDoc(
+          doc(db, FIRESTORE_PATHS.usersCollection, buildUserDocId(email)),
           nextUser,
-        ...prev.filter((entry) => entry.email?.toLowerCase() !== email)
-        ]);
-        setUser(nextUser);
+          { merge: true }
+        );
+      } catch (error) {
+        console.warn("User profile sync skipped:", error?.message || error);
+      }
     });
 
     return () => unsubscribe();
@@ -2534,33 +2794,26 @@ export default function App() {
     setSearchSuggestionsOpen(false);
   };
 
-  const submitAdminPassword = async () => {
+  const submitAdminPassword = () => {
     setAdminSecurityError("");
 
-    try {
-      const backendAdmin = await checkBackendAdminAccess(auth.currentUser);
-
-      if (!backendAdmin.admin) {
-        setAdminSecurityError("Admin access denied.");
-        return;
-      }
-
-      setAdminSessionToken(backendAdmin.token);
-      writeSessionValue(STORAGE_KEYS.adminSession, userEmail);
-      setHasAdminAccess(true);
-      setAdminAuthStep("authenticated");
-      setAdminLoginForm((prev) => ({
-        ...prev,
-        password: "",
-        pin: "",
-        otpCode: ""
-      }));
-      setToast("Admin panel unlocked.");
-      navigateTo("admin");
-    } catch (error) {
-      setAdminSecurityError(error.message || "Unable to verify admin access.");
+    if (adminLoginForm.password !== ADMIN_PANEL_PASSWORD) {
+      setAdminSecurityError("Incorrect password");
       return;
     }
+
+    setAdminSessionToken(userEmail);
+    writeSessionValue(STORAGE_KEYS.adminSession, userEmail);
+    setHasAdminAccess(true);
+    setAdminAuthStep("authenticated");
+    setAdminLoginForm((prev) => ({
+      ...prev,
+      password: "",
+      pin: "",
+      otpCode: ""
+    }));
+    setToast("Admin panel unlocked.");
+    navigateTo("admin");
   };
 
   const endAdminSession = () => {
@@ -2586,37 +2839,6 @@ export default function App() {
   const saveAdminTwoFactorSettings = () => {
     setAdminSecurityError("");
     setToast("Email and SMS OTP are disabled.");
-  };
-
-  const submitReturnRequest = () => {
-    if (!returnForm.phone || !returnForm.email || !returnForm.reason) {
-      setToast("Please fill all fields.");
-      return;
-    }
-
-    const newRequest = {
-      id: createId("ret"),
-      orderId: selectedReturnOrder.id,
-      customerName: user.name,
-      customerEmail: returnForm.email,
-      customerPhone: returnForm.phone,
-      reason: returnForm.reason,
-      status: "pending",
-      requestedAt: Date.now(),
-      orderDate: selectedReturnOrder.createdAt
-    };
-
-    setReturnRequests((prev) => [newRequest, ...prev]);
-    setShowReturnForm(false);
-    setReturnForm({ phone: "", email: "", reason: "" });
-    setToast("Return request submitted successfully.");
-  };
-
-  const updateReturnStatus = (requestId, nextStatus) => {
-    setReturnRequests((prev) =>
-      prev.map((req) => (req.id === requestId ? { ...req, status: nextStatus } : req))
-    );
-    setToast(`Return request ${nextStatus}.`);
   };
 
   useEffect(() => {
@@ -2656,7 +2878,7 @@ export default function App() {
     setIsEditingProfile(true);
   };
 
-  const saveProfile = () => {
+  const saveProfile = async () => {
     if (!user || !currentUserRecord) {
       return;
     }
@@ -2671,25 +2893,44 @@ export default function App() {
       return;
     }
 
-    const email = String(user.email || "").toLowerCase();
-    setUsers((prev) =>
-      prev.map((entry) => {
-        if (entry.email?.toLowerCase() !== email) {
-          return entry;
-        }
+    const email = normalizeEmail(user.email);
+    const nextUserRecord = normalizeUserRecord({
+      ...currentUserRecord,
+      uid: user.uid,
+      name: profileForm.name.trim(),
+      phone: profileForm.phone.trim(),
+      gender: profileForm.gender,
+      birthdate: profileForm.birthdate
+    });
 
-        return {
-          ...entry,
-          name: profileForm.name.trim(),
-          phone: profileForm.phone.trim(),
-          gender: profileForm.gender,
-          birthdate: profileForm.birthdate
-        };
-      })
-    );
-
-    setIsEditingProfile(false);
-    setToast("Profile updated successfully.");
+    try {
+      await setDoc(
+        doc(db, FIRESTORE_PATHS.usersCollection, buildUserDocId(email)),
+        nextUserRecord,
+        { merge: true }
+      );
+      setUsers((prev) =>
+        prev.map((entry) =>
+          normalizeEmail(entry.email) === email ? nextUserRecord : entry
+        )
+      );
+      setUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              name: nextUserRecord.name,
+              phone: nextUserRecord.phone,
+              gender: nextUserRecord.gender,
+              birthdate: nextUserRecord.birthdate
+            }
+          : prev
+      );
+      setIsEditingProfile(false);
+      setToast("Profile updated successfully.");
+    } catch (error) {
+      console.error(error);
+      setToast("Unable to save your profile right now.");
+    }
   };
 
   const handleRazorpayPayment = async (amountToPay, onPaymentSuccess) => {
@@ -2717,10 +2958,16 @@ export default function App() {
         description: "Order Payment",
         order_id: orderData.id,
         handler: function (response) {
-          onPaymentSuccess({
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_order_id: response.razorpay_order_id,
-            razorpay_signature: response.razorpay_signature
+          Promise.resolve(
+            onPaymentSuccess({
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_signature: response.razorpay_signature
+            })
+          ).catch((error) => {
+            console.error("Order sync after Razorpay payment failed:", error);
+            setToast("Payment succeeded, but order sync needs a retry.");
+            setRazorpayLoading(false);
           });
         },
         prefill: {
@@ -2941,6 +3188,11 @@ export default function App() {
       return;
     }
 
+    if (!user || !userEmail) {
+      setToast("Please log in before placing an order.");
+      return;
+    }
+
     if (!paymentMethod) {
       setToast("Payment methods are currently unavailable. Please contact support.");
       return;
@@ -2984,8 +3236,7 @@ export default function App() {
       return;
     }
 
-    const now = Date.now();
-    const orderId = `VA-${now.toString().slice(-6)}`;
+    const orderId = createOrderId();
     let orderStatus = "Pending Payment";
     
     if (isFullAuraPayment) {
@@ -2997,7 +3248,7 @@ export default function App() {
     // Razorpay Integration
     if (paymentMethod === "razorpay" && !isFullAuraPayment) {
       handleRazorpayPayment(remainingPayable, (razorpayResponse) => {
-        finalizeOrder(orderId, "Paid", razorpayResponse);
+        return finalizeOrder(orderId, "Paid", razorpayResponse);
       });
       return;
     }
@@ -3005,7 +3256,7 @@ export default function App() {
     finalizeOrder(orderId, orderStatus);
   };
 
-  const finalizeOrder = (orderId, orderStatus, razorpayData = null) => {
+  const finalizeOrder = async (orderId, orderStatus, razorpayData = null) => {
     const now = Date.now();
     const codCharge = paymentMethod === "cod" ? COD_CHARGE : 0;
     const orderTotal = cartTotal + codCharge;
@@ -3014,7 +3265,7 @@ export default function App() {
     const remainingPayable = orderTotal - auraUsed;
     const isFullAuraPayment = auraUsed >= orderTotal && auraUsed > 0;
 
-    const order = {
+    const order = normalizeOrderRecord({
       id: orderId,
       createdAt: now,
       dateLabel: new Date(now).toLocaleString("en-IN"),
@@ -3027,72 +3278,91 @@ export default function App() {
       codCharge,
       auraPointsUsed: auraUsed,
       remainingPayable: remainingPayable,
-      customer: { ...checkoutForm },
+      customer: {
+        ...checkoutForm,
+        email: userEmail,
+        phone: checkoutForm.phone
+      },
       razorpayData,
-      userEmail: user?.email || "guest@local",
+      userUid: String(user?.uid || ""),
+      userEmail,
+      userPhone: normalizePhone(checkoutForm.phone),
       refundRequested: false,
       returnRequested: false
-    };
+    });
 
-    setOrders((prev) => [order, ...prev]);
-    setCart([]);
-    setCheckoutForm(initialCheckoutForm);
-    setHistory(["home"]);
-    setActivePage("orders");
+    const cashback = Math.floor(cartTotal * 0.05);
+    const pointsAfterDeduction = Math.max(0, auraPoints - auraUsed);
+    const nextAura = pointsAfterDeduction + cashback;
+    const email = normalizeEmail(user?.email);
+    const matchingUser = usersRef.current.find((entry) => normalizeEmail(entry.email) === email);
+    const history = [...(matchingUser?.auraHistory || [])];
 
-    if (user) {
-      const cashback = Math.floor(cartTotal * 0.05);
-      // Ensure balance never goes below zero
-      const pointsAfterDeduction = Math.max(0, auraPoints - auraUsed);
-      const nextAura = pointsAfterDeduction + cashback;
-      
-      const email = String(user.email || "").toLowerCase();
-      setUsers((prev) =>
-        prev.map((entry) => {
-          if (entry.email?.toLowerCase() !== email) {
-            return entry;
-          }
-
-          const history = [...(entry.auraHistory || [])];
-          
-          if (auraUsed > 0) {
-            history.unshift({
-              id: createId("tra"),
-              date: new Date(now).toLocaleDateString("en-IN"),
-              time: new Date(now).toLocaleTimeString("en-IN"),
-              amount: -auraUsed,
-              type: "Deduction",
-              adminName: "System",
-              reason: "Used for order payment",
-              orderId: orderId
-            });
-          }
-          
-          if (cashback > 0) {
-            history.unshift({
-              id: createId("tra"),
-              date: new Date(now).toLocaleDateString("en-IN"),
-              time: new Date(now).toLocaleTimeString("en-IN"),
-              amount: cashback,
-              type: "Deposit",
-              adminName: "System",
-              reason: `Cashback for order (${orderId})`
-            });
-          }
-
-          return {
-            ...entry,
-            auraPoints: nextAura,
-            totalSpent: Number(entry.totalSpent || 0) + orderTotal,
-            totalOrders: Number(entry.totalOrders || 0) + 1,
-            auraHistory: history
-          };
-        })
-      );
+    if (auraUsed > 0) {
+      history.unshift({
+        id: createId("tra"),
+        date: new Date(now).toLocaleDateString("en-IN"),
+        time: new Date(now).toLocaleTimeString("en-IN"),
+        amount: -auraUsed,
+        type: "Deduction",
+        adminName: "System",
+        reason: "Used for order payment",
+        orderId
+      });
     }
 
-    setToast(`Order ${orderId} placed successfully.`);
-    setRazorpayLoading(false);
+    if (cashback > 0) {
+      history.unshift({
+        id: createId("tra"),
+        date: new Date(now).toLocaleDateString("en-IN"),
+        time: new Date(now).toLocaleTimeString("en-IN"),
+        amount: cashback,
+        type: "Deposit",
+        adminName: "System",
+        reason: `Cashback for order (${orderId})`
+      });
+    }
+
+    const nextUserRecord = normalizeUserRecord({
+      ...(matchingUser || currentUserRecord || user),
+      uid: user?.uid || matchingUser?.uid || "",
+      name: matchingUser?.name || user?.name || user?.displayName || email.split("@")[0],
+      email,
+      phone: matchingUser?.phone || checkoutForm.phone,
+      gender: matchingUser?.gender || "",
+      birthdate: matchingUser?.birthdate || "",
+      photo: matchingUser?.photo || user?.photo || getFirebaseProfilePhotoUrl(user) || "",
+      auraPoints: nextAura,
+      totalSpent: Number(matchingUser?.totalSpent || 0) + orderTotal,
+      totalOrders: Number(matchingUser?.totalOrders || 0) + 1,
+      auraHistory: history,
+      lastLoginAt: matchingUser?.lastLoginAt || Date.now()
+    });
+
+    try {
+      await setDoc(doc(db, FIRESTORE_PATHS.ordersCollection, order.id), order);
+      await setDoc(
+        doc(db, FIRESTORE_PATHS.usersCollection, buildUserDocId(email)),
+        nextUserRecord,
+        { merge: true }
+      );
+
+      setOrders((prev) => sortOrdersNewestFirst([order, ...prev]));
+      setUsers((prev) => {
+        const nextUsers = prev.filter((entry) => normalizeEmail(entry.email) !== email);
+        return [nextUserRecord, ...nextUsers];
+      });
+      setCart([]);
+      setCheckoutForm(initialCheckoutForm);
+      setHistory(["home"]);
+      setActivePage("orders");
+      setToast(`Order ${orderId} placed successfully.`);
+    } catch (error) {
+      console.error(error);
+      setToast("Payment succeeded, but order sync is pending. Please refresh My Orders in a moment.");
+    } finally {
+      setRazorpayLoading(false);
+    }
   };
 
   const setUserFormField = (field, value) => {
@@ -3102,8 +3372,8 @@ export default function App() {
     }));
   };
 
-  const addManualUser = () => {
-    const email = userForm.email.trim().toLowerCase();
+  const addManualUser = async () => {
+    const email = normalizeEmail(userForm.email);
 
     if (!userForm.name.trim() || !email) {
       setToast("Enter user name and email.");
@@ -3128,52 +3398,83 @@ export default function App() {
       auraHistory: []
     };
 
-    setUsers((prev) => [nextUser, ...prev]);
-    setUserForm(emptyUserForm);
-    setToast("User added.");
+    try {
+      const normalizedUser = normalizeUserRecord(nextUser);
+      await setDoc(
+        doc(db, FIRESTORE_PATHS.usersCollection, buildUserDocId(email)),
+        normalizedUser
+      );
+      setUsers((prev) => [normalizedUser, ...prev]);
+      setUserForm(emptyUserForm);
+      setToast("User added.");
+    } catch (error) {
+      console.error(error);
+      setToast("Unable to add the user right now.");
+    }
   };
 
-  const removeUser = (email) => {
-    setUsers((prev) =>
-      prev.filter((entry) => entry.email?.toLowerCase() !== email.toLowerCase())
-    );
+  const removeUser = async (email) => {
+    const normalizedEmail = normalizeEmail(email);
 
-    if (user?.email?.toLowerCase() === email.toLowerCase()) {
-      logout();
+    try {
+      await deleteDoc(
+        doc(db, FIRESTORE_PATHS.usersCollection, buildUserDocId(normalizedEmail))
+      );
+      setUsers((prev) =>
+        prev.filter((entry) => normalizeEmail(entry.email) !== normalizedEmail)
+      );
+
+      if (normalizeEmail(user?.email) === normalizedEmail) {
+        logout();
+      }
+
+      setToast("User removed.");
+    } catch (error) {
+      console.error(error);
+      setToast("Unable to remove the user right now.");
+    }
+  };
+
+  const toggleBlockUser = async (email) => {
+    const normalizedEmail = normalizeEmail(email);
+    const existingUser = users.find((entry) => normalizeEmail(entry.email) === normalizedEmail);
+
+    if (!existingUser) {
+      return;
     }
 
-    setToast("User removed.");
-  };
+    const nextUserRecord = normalizeUserRecord({
+      ...existingUser,
+      status: existingUser.status === "blocked" ? "active" : "blocked"
+    });
 
-  const toggleBlockUser = (email) => {
-    let blockedCurrentUser = false;
+    try {
+      await setDoc(
+        doc(db, FIRESTORE_PATHS.usersCollection, buildUserDocId(normalizedEmail)),
+        nextUserRecord,
+        { merge: true }
+      );
+      setUsers((prev) =>
+        prev.map((entry) =>
+          normalizeEmail(entry.email) === normalizedEmail ? nextUserRecord : entry
+        )
+      );
 
-    setUsers((prev) =>
-      prev.map((entry) => {
-        if (entry.email?.toLowerCase() !== email.toLowerCase()) {
-          return entry;
-        }
+      if (
+        nextUserRecord.status === "blocked" &&
+        normalizeEmail(user?.email) === normalizedEmail
+      ) {
+        logout();
+      }
 
-        const nextStatus = entry.status === "blocked" ? "active" : "blocked";
-        blockedCurrentUser =
-          nextStatus === "blocked" &&
-          user?.email?.toLowerCase() === email.toLowerCase();
-
-        return {
-          ...entry,
-          status: nextStatus
-        };
-      })
-    );
-
-    if (blockedCurrentUser) {
-      logout();
+      setToast("User status updated.");
+    } catch (error) {
+      console.error(error);
+      setToast("Unable to update user status right now.");
     }
-
-    setToast("User status updated.");
   };
 
-  const updateAuraPoints = (email, actionType) => {
+  const updateAuraPoints = async (email, actionType) => {
     const amount = Number(auraActionForm.amount);
     const reason = auraActionForm.reason.trim();
 
@@ -3189,47 +3490,60 @@ export default function App() {
 
     const adminName = user?.name || "Admin";
     const now = Date.now();
+    const normalizedEmail = normalizeEmail(email);
+    const existingUser = users.find((entry) => normalizeEmail(entry.email) === normalizedEmail);
 
-    setUsers((prev) =>
-      prev.map((entry) => {
-        if (entry.email?.toLowerCase() !== email.toLowerCase()) {
-          return entry;
-        }
+    if (!existingUser) {
+      setToast("User not found.");
+      return;
+    }
 
-        let nextPoints = Number(entry.auraPoints || 0);
-        let delta = 0;
+    let nextPoints = Number(existingUser.auraPoints || 0);
+    let delta = 0;
 
-        if (actionType === "Add") {
-          delta = amount;
-          nextPoints += amount;
-        } else if (actionType === "Deduct") {
-          delta = -amount;
-          nextPoints = Math.max(0, nextPoints - amount);
-        } else if (actionType === "Edit") {
-          delta = amount - nextPoints;
-          nextPoints = Math.max(0, amount);
-        }
+    if (actionType === "Add") {
+      delta = amount;
+      nextPoints += amount;
+    } else if (actionType === "Deduct") {
+      delta = -amount;
+      nextPoints = Math.max(0, nextPoints - amount);
+    } else if (actionType === "Edit") {
+      delta = amount - nextPoints;
+      nextPoints = Math.max(0, amount);
+    }
 
-        const transaction = {
-          id: createId("tra"),
-          date: new Date(now).toLocaleDateString("en-IN"),
-          time: new Date(now).toLocaleTimeString("en-IN"),
-          amount: delta,
-          type: actionType === "Edit" ? "Adjustment" : (delta >= 0 ? "Deposit" : "Withdrawal"),
-          adminName,
-          reason
-        };
+    const transaction = {
+      id: createId("tra"),
+      date: new Date(now).toLocaleDateString("en-IN"),
+      time: new Date(now).toLocaleTimeString("en-IN"),
+      amount: delta,
+      type: actionType === "Edit" ? "Adjustment" : (delta >= 0 ? "Deposit" : "Withdrawal"),
+      adminName,
+      reason
+    };
+    const nextUserRecord = normalizeUserRecord({
+      ...existingUser,
+      auraPoints: nextPoints,
+      auraHistory: [transaction, ...(existingUser.auraHistory || [])]
+    });
 
-        return {
-          ...entry,
-          auraPoints: nextPoints,
-          auraHistory: [transaction, ...(entry.auraHistory || [])]
-        };
-      })
-    );
-
-    setAuraActionForm({ amount: "", reason: "", targetUserEmail: "" });
-    setToast(`Aura points ${actionType.toLowerCase()}ed.`);
+    try {
+      await setDoc(
+        doc(db, FIRESTORE_PATHS.usersCollection, buildUserDocId(normalizedEmail)),
+        nextUserRecord,
+        { merge: true }
+      );
+      setUsers((prev) =>
+        prev.map((entry) =>
+          normalizeEmail(entry.email) === normalizedEmail ? nextUserRecord : entry
+        )
+      );
+      setAuraActionForm({ amount: "", reason: "", targetUserEmail: "" });
+      setToast(`Aura points ${actionType.toLowerCase()}ed.`);
+    } catch (error) {
+      console.error(error);
+      setToast("Unable to update Aura points right now.");
+    }
   };
 
   const setProductFormField = (field, value) => {
@@ -3498,22 +3812,34 @@ export default function App() {
     setToast("Product deleted.");
   };
 
-  const updateOrderStatus = (orderId, status) => {
-    setOrders((prev) =>
-      prev.map((entry) =>
-        entry.id === orderId
-          ? {
-              ...entry,
-              status,
-              refundRequested:
-                status === "Refund Requested" ? true : entry.refundRequested,
-              returnRequested:
-                status === "Return Requested" ? true : entry.returnRequested
-            }
-          : entry
-      )
-    );
-    setToast(`Order marked as ${status}.`);
+  const updateOrderStatus = async (orderId, status) => {
+    const existingOrder = orders.find((entry) => entry.id === orderId);
+
+    if (!existingOrder) {
+      return;
+    }
+
+    const nextOrder = normalizeOrderRecord({
+      ...existingOrder,
+      status,
+      refundRequested:
+        status === "Refund Requested" ? true : existingOrder.refundRequested,
+      returnRequested:
+        status === "Return Requested" ? true : existingOrder.returnRequested
+    });
+
+    try {
+      await setDoc(doc(db, FIRESTORE_PATHS.ordersCollection, orderId), nextOrder, {
+        merge: true
+      });
+      setOrders((prev) =>
+        prev.map((entry) => (entry.id === orderId ? nextOrder : entry))
+      );
+      setToast(`Order marked as ${status}.`);
+    } catch (error) {
+      console.error(error);
+      setToast("Unable to update the order right now.");
+    }
   };
 
   const buildEmptyBannerForm = () => ({
@@ -5154,8 +5480,8 @@ export default function App() {
 
   const renderOrders = () => {
     const visibleOrders = isAdmin
-      ? orders
-      : orders.filter((order) => order.userEmail === (user?.email || "guest@local"));
+      ? uniqueOrders
+      : uniqueOrders.filter((order) => doesOrderBelongToUser(order, currentUserRecord || user));
 
     return (
       <div style={shellStyle}>
@@ -5301,59 +5627,6 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-
-                  {!isAdmin && order.status === "Paid" && (
-                    <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: `1px solid ${tone.line}` }}>
-                      {(() => {
-                        const request = returnRequests.find((r) => r.orderId === order.id);
-                        if (request) {
-                          return (
-                            <div style={{ 
-                              display: "flex", 
-                              alignItems: "center", 
-                              justifyContent: "space-between",
-                              padding: "12px 16px",
-                              borderRadius: "12px",
-                              background: tone.soft,
-                              border: `1px solid ${tone.line}`
-                            }}>
-                              <span style={{ fontSize: "14px", fontWeight: 600 }}>Return Request Status:</span>
-                              <span
-                                style={{
-                                  padding: "4px 10px",
-                                  borderRadius: "999px",
-                                  fontSize: "12px",
-                                  fontWeight: 700,
-                                  background: request.status === "Approved" ? "#e8f5e9" : request.status === "Rejected" ? "#ffebee" : "#fff3e0",
-                                  color: request.status === "Approved" ? "#2e7d32" : request.status === "Rejected" ? "#c62828" : "#ef6c00",
-                                  border: `1px solid ${request.status === "Approved" ? "#a5d6a7" : request.status === "Rejected" ? "#ef9a9a" : "#ffcc80"}`
-                                }}
-                              >
-                                {request.status.toUpperCase()}
-                              </span>
-                            </div>
-                          );
-                        }
-                        return (
-                          <button
-                            onClick={() => {
-                              setSelectedReturnOrder(order);
-                              setShowReturnForm(true);
-                              setReturnForm({ ...returnForm, email: user.email });
-                            }}
-                            style={{
-                              ...secondaryButtonStyle,
-                              width: "100%",
-                              borderRadius: "12px",
-                              padding: "12px"
-                            }}
-                          >
-                            Return Product
-                          </button>
-                        );
-                      })()}
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
@@ -5523,7 +5796,7 @@ export default function App() {
                   `Gender: ${currentUserRecord?.gender || "Not specified"}`,
                   `Birthdate: ${currentUserRecord?.birthdate || "Not specified"}`,
                   `Wishlist Items: ${wishlist.length}`,
-                  `Orders: ${orders.filter((order) => order.userEmail === user.email).length}`,
+                  `Orders: ${uniqueOrders.filter((order) => doesOrderBelongToUser(order, currentUserRecord || user)).length}`,
                   `Role: ${
                     isAdmin
                       ? "Admin"
@@ -5780,7 +6053,7 @@ export default function App() {
                     { label: "Daily Report", value: formatCurrency(dailySales) },
                     { label: "Weekly Report", value: formatCurrency(weeklySales) },
                     { label: "Monthly Report", value: formatCurrency(monthlySales) },
-                    { label: "Total Orders", value: orders.length }
+                    { label: "Total Orders", value: uniqueOrders.length }
                   ].map((stat) => (
                     <div
                       key={stat.label}
@@ -6318,7 +6591,7 @@ export default function App() {
                   }}
                 >
                   <div style={{ display: "grid", gap: "12px" }}>
-                    {orders.map((order) => (
+                    {uniqueOrders.map((order) => (
                       <button
                         key={order.id}
                         onClick={() => setSelectedAdminOrderId(order.id)}
@@ -7227,77 +7500,6 @@ export default function App() {
               </>
             )}
 
-            {adminTab === "returns" && (
-              <>
-                <h2 style={{ marginTop: 0 }}>Return Management</h2>
-                <div style={{ display: "grid", gap: "18px" }}>
-                  {returnRequests.length === 0 ? (
-                    <p style={{ color: tone.muted }}>No return requests found.</p>
-                  ) : (
-                    returnRequests.map((req) => (
-                      <div
-                        key={req.id}
-                        style={{
-                          border: `1px solid ${tone.line}`,
-                          borderRadius: "18px",
-                          padding: "20px",
-                          background: tone.white
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
-                          <div>
-                            <h3 style={{ margin: "0 0 4px" }}>Request ID: {req.id}</h3>
-                            <p style={{ margin: "0 0 8px", color: tone.muted, fontSize: "14px" }}>
-                              Order ID: {req.orderId} | Requested on: {new Date(req.requestedAt).toLocaleString()}
-                            </p>
-                            <div style={{ display: "grid", gap: "4px", fontSize: "14px" }}>
-                              <strong>Customer Details:</strong>
-                              <span>Name: {req.customerName}</span>
-                              <span>Email: {req.customerEmail}</span>
-                              <span>Phone: {req.customerPhone}</span>
-                            </div>
-                          </div>
-                          <span
-                            style={{
-                              padding: "6px 12px",
-                              borderRadius: "999px",
-                              fontSize: "12px",
-                              fontWeight: 700,
-                              background: req.status === "Approved" ? "#e8f5e9" : req.status === "Rejected" ? "#ffebee" : "#fff3e0",
-                              color: req.status === "Approved" ? "#2e7d32" : req.status === "Rejected" ? "#c62828" : "#ef6c00",
-                              border: `1px solid ${req.status === "Approved" ? "#a5d6a7" : req.status === "Rejected" ? "#ef9a9a" : "#ffcc80"}`
-                            }}
-                          >
-                            {req.status.toUpperCase()}
-                          </span>
-                        </div>
-                        <div style={{ marginTop: "16px", padding: "14px", borderRadius: "14px", background: tone.soft, border: `1px solid ${tone.line}` }}>
-                          <strong>Reason for Return:</strong>
-                          <p style={{ margin: "6px 0 0", lineHeight: 1.6 }}>{req.reason}</p>
-                        </div>
-                        {req.status === "pending" && (
-                          <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
-                            <button
-                              onClick={() => updateReturnStatus(req.id, "Approved")}
-                              style={{ ...primaryButtonStyle, padding: "10px 20px", width: "auto" }}
-                            >
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => updateReturnStatus(req.id, "Rejected")}
-                              style={{ ...secondaryButtonStyle, padding: "10px 20px", width: "auto" }}
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </>
-            )}
-
             {adminTab === "settings" && (
               <>
                 <h2 style={{ marginTop: 0 }}>Settings</h2>
@@ -8008,82 +8210,6 @@ export default function App() {
           </button>
         </div>
       </nav>
-
-      {showReturnForm && selectedReturnOrder && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            backdropFilter: "blur(8px)",
-            zIndex: 2000,
-            display: "grid",
-            placeItems: "center",
-            padding: "20px"
-          }}
-        >
-          <div
-            style={{
-              ...cardStyle,
-              width: "min(100%, 480px)",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              position: "relative"
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h2 style={{ margin: 0 }}>Return Request</h2>
-              <button
-                onClick={() => setShowReturnForm(false)}
-                className="icon-button"
-                style={{ ...rightIconButton, color: tone.body, borderColor: tone.line }}
-              >
-                <CloseIcon />
-              </button>
-            </div>
-
-            <p style={{ marginBottom: "20px", color: tone.muted }}>
-              Requesting return for Order: <strong>{selectedReturnOrder.id}</strong>
-            </p>
-
-            <div style={{ display: "grid", gap: "16px" }}>
-              <div style={{ display: "grid", gap: "6px" }}>
-                <label style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", color: tone.muted }}>Mobile Number</label>
-                <input
-                  value={returnForm.phone}
-                  onChange={(e) => setReturnForm({ ...returnForm, phone: e.target.value })}
-                  placeholder="Enter 10-digit mobile number"
-                  style={inputStyle}
-                />
-              </div>
-              <div style={{ display: "grid", gap: "6px" }}>
-                <label style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", color: tone.muted }}>Email Address</label>
-                <input
-                  value={returnForm.email}
-                  onChange={(e) => setReturnForm({ ...returnForm, email: e.target.value })}
-                  placeholder="Enter your email"
-                  style={inputStyle}
-                />
-              </div>
-              <div style={{ display: "grid", gap: "6px" }}>
-                <label style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", color: tone.muted }}>Return Reason</label>
-                <textarea
-                  value={returnForm.reason}
-                  onChange={(e) => setReturnForm({ ...returnForm, reason: e.target.value })}
-                  placeholder="Why are you returning this product?"
-                  style={{ ...inputStyle, minHeight: "120px", resize: "none" }}
-                />
-              </div>
-              <button
-                onClick={submitReturnRequest}
-                style={{ ...primaryButtonStyle, marginTop: "10px" }}
-              >
-                Request Return
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {toast && (
         <div

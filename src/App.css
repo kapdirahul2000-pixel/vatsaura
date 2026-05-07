@@ -914,13 +914,17 @@
   scroll-margin-top: 7rem;
 }
 
+.catalog-section__description {
+  font-size: 13px !important;
+}
+
 @media (max-width: 768px) {
   .product-detail-list__item--special strong {
     font-size: 0.86rem !important;
   }
   #root .caption,
   .catalog-section__description {
-    font-size: 0.86rem !important;
+    font-size: 11px !important;
   }
 }
 
@@ -1081,19 +1085,24 @@
 .product-card__wishlist {
   width: 2.9rem;
   height: 2.9rem;
-  border: 1px solid rgba(17, 17, 17, 0.12);
-  border-radius: 999px;
-  background: #ffffff;
+  border: none;
+  background: transparent;
   color: #111111;
   display: grid;
   place-items: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: transform 180ms ease, background 180ms ease;
+  transition: transform 180ms ease;
+}
+
+.product-card__wishlist svg {
+  width: 37.69px;
+  height: 37.69px;
 }
 
 .product-card__wishlist:hover {
-  transform: scale(1.04);
+  transform: scale(1.15);
+  background: transparent;
 }
 
 .product-card__wishlist svg {
