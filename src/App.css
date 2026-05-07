@@ -361,6 +361,11 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+.icon-button svg {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
 .icon-button:hover,
 .button-primary:hover,
 .button-secondary:hover,
@@ -1082,22 +1087,30 @@
   line-height: 1.4;
 }
 
+.product-card__kalawa-note {
+  margin: 0.22rem 0 0;
+  color: #8a8a8a;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .product-card__wishlist {
-  width: 2.9rem;
-  height: 2.9rem;
+  width: 3.5rem;
+  height: 3.5rem;
   border: none;
   background: transparent;
   color: #111111;
   display: grid;
   place-items: center;
   cursor: pointer;
+  flex: 0 0 3.5rem;
   flex-shrink: 0;
   transition: transform 180ms ease;
 }
 
 .product-card__wishlist svg {
-  width: 37.69px;
-  height: 37.69px;
+  width: 100%;
+  height: 100%;
 }
 
 .product-card__wishlist:hover {
@@ -1861,14 +1874,24 @@
     font-size: 0.76rem;
   }
 
+  .product-card__kalawa-note {
+    font-size: 0.62rem;
+  }
+
   .product-card__wishlist {
     width: 2.15rem;
     height: 2.15rem;
   }
 
   .product-card__wishlist svg {
-    width: 1.08rem;
-    height: 1.08rem;
+    width: 100%;
+    height: 100%;
+  }
+
+  .product-card__wishlist {
+    width: 2.65rem;
+    height: 2.65rem;
+    flex-basis: 2.65rem;
   }
 
   .product-card__price {
@@ -2097,7 +2120,6 @@
   justify-content: center;
   gap: 0.75rem;
   line-height: 1;
-  transform: translateY(0.15rem);
   white-space: nowrap;
 }
 
@@ -2105,13 +2127,11 @@
   display: inline-flex;
   align-items: center;
   line-height: 1;
-  transform: translateY(-0.15rem);
 }
 
 .site-footer__divider {
   align-self: center;
   flex: 0 0 auto;
-  transform: translateY(-0.15rem);
 }
 
 .site-footer__powered-text {
@@ -2198,26 +2218,23 @@
 
   .site-footer__branding {
     gap: 0.38rem !important;
-    margin-bottom: -0.62rem !important;
+    margin-bottom: 0 !important;
     align-items: center !important;
   }
 
   .site-footer__brand-name {
     font-size: 0.92rem !important;
     line-height: 1 !important;
-    transform: translateY(-0.08rem) !important;
   }
 
   .site-footer__divider {
     height: 0.77rem !important;
-    transform: translateY(-0.08rem) !important;
   }
 
   .site-footer__powered {
     display: inline-flex !important;
     align-items: center !important;
     gap: 0.62rem !important;
-    transform: translateY(0.08rem) !important;
   }
 
   .site-footer__powered .site-footer__powered-text {
@@ -2231,7 +2248,7 @@
   }
 
   .site-footer__rule {
-    margin: -0.31rem 0 0.08rem !important;
+    margin: 0.12rem 0 0.38rem !important;
   }
 
   .site-footer div:nth-of-type(2) {

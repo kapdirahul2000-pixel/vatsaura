@@ -23,11 +23,40 @@ service cloud.firestore {
         request.auth.token.email == email;
     }
 
+    function auraFieldsUnchanged() {
+      return request.resource.data.auraPoints == resource.data.auraPoints &&
+        request.resource.data.auraHistory == resource.data.auraHistory;
+    }
+
     function isOrderOwner(data) {
       return signedIn() && (
         (data.userUid is string && data.userUid == request.auth.uid) ||
         (data.userEmail is string && isCurrentUserEmail(data.userEmail))
       );
+    }
+
+    function isReturnRequestUpdate() {
+      let changed = request.resource.data.diff(resource.data).changedKeys();
+      let deliveredAt = resource.data.deliveredAt;
+
+      return isOrderOwner(resource.data) &&
+        deliveredAt != null &&
+        (deliveredAt is int || deliveredAt is float) &&
+        resource.data.status == "Delivered" &&
+        request.time.toMillis() <= deliveredAt + 259200000 &&
+        resource.data.returnRequested != true &&
+        changed.hasOnly(["returnRequested", "returnRequestStatus", "returnRequest"]) &&
+        request.resource.data.returnRequested == true &&
+        request.resource.data.returnRequestStatus == "Pending" &&
+        request.resource.data.returnRequest is map &&
+        request.resource.data.returnRequest.name is string &&
+        request.resource.data.returnRequest.phone is string &&
+        request.resource.data.returnRequest.reason is string &&
+        request.resource.data.returnRequest.requestedAt is int &&
+        request.resource.data.returnRequest.requestedAtLabel is string &&
+        request.resource.data.returnRequest.name.size() > 0 &&
+        request.resource.data.returnRequest.phone.size() > 0 &&
+        request.resource.data.returnRequest.reason.size() > 0;
     }
 
     match /appState/primary {
@@ -40,14 +69,16 @@ service cloud.firestore {
       allow create: if isAdmin() || (
         isCurrentUserEmail(userId) &&
         request.resource.data.email is string &&
-        request.resource.data.email == userId
+        request.resource.data.email == userId &&
+        request.resource.data.auraPoints == 0
       );
       allow update: if isAdmin() || (
         isCurrentUserEmail(userId) &&
         resource.data.email is string &&
         resource.data.email == userId &&
         request.resource.data.email is string &&
-        request.resource.data.email == userId
+        request.resource.data.email == userId &&
+        auraFieldsUnchanged()
       );
       allow delete: if isAdmin() || isCurrentUserEmail(userId);
     }
@@ -55,7 +86,8 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isAdmin() || isOrderOwner(resource.data);
       allow create: if isAdmin() || isOrderOwner(request.resource.data);
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin() || isReturnRequestUpdate();
+      allow delete: if isAdmin();
     }
   }
 }

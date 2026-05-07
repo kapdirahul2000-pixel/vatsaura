@@ -18,6 +18,7 @@ import {
   signOut
 } from "firebase/auth";
 import brandHeaderVideo from "./brand-header-video.mp4";
+import kalawaImage from "./assets/images/kalawa.png";
 import { buildApiUrl } from "./apiConfig";
 
 const ADMIN_EMAILS = [
@@ -274,6 +275,8 @@ const emptyProductForm = {
   videoData: ""
 };
 
+const DEFAULT_PRODUCT_DEPARTMENTS = ["tshirts"];
+
 const emptyUserForm = {
   name: "",
   email: "",
@@ -407,6 +410,7 @@ const adminTabs = [
   { key: "users", label: "Users" },
   { key: "products", label: "Products" },
   { key: "orders", label: "Orders" },
+  { key: "returns", label: "Returns" },
   { key: "content", label: "Content" },
   { key: "settings", label: "Settings" }
 ];
@@ -548,6 +552,7 @@ const DEFAULT_HOME_HIGHLIGHTS = [
 const defaultSettings = {
   websiteName: "VATSAURA",
   logoData: "",
+  productDepartments: DEFAULT_PRODUCT_DEPARTMENTS,
   tshirtCategories: DEFAULT_TSHIRT_CATEGORIES,
   latestDropProductIds: defaultProducts.slice(0, 4).map((product) => product.id),
   homeHighlights: DEFAULT_HOME_HIGHLIGHTS,
@@ -886,6 +891,41 @@ const sanitizeTshirtCategories = (categories) => {
   return normalized.length > 0 ? normalized : DEFAULT_TSHIRT_CATEGORIES;
 };
 
+const normalizeDepartmentName = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const sanitizeProductDepartments = (departments) => {
+  const fallback =
+    Array.isArray(departments) && departments.length > 0
+      ? departments
+      : DEFAULT_PRODUCT_DEPARTMENTS;
+
+  const normalized = fallback
+    .map(normalizeDepartmentName)
+    .filter(Boolean)
+    .filter((department, index, array) => array.indexOf(department) === index);
+
+  return normalized.length > 0 ? normalized : DEFAULT_PRODUCT_DEPARTMENTS;
+};
+
+const formatDepartmentLabel = (department) => {
+  const normalizedDepartment = normalizeDepartmentName(department);
+
+  if (normalizedDepartment === "tshirts") {
+    return "T-Shirts";
+  }
+
+  return normalizedDepartment
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
 const normalizeBanner = (banner, index = 0) => {
   const rawTitle = String(banner?.title || "").trim();
   const rawSubtitle = String(banner?.subtitle || "").trim();
@@ -982,6 +1022,7 @@ const normalizeSettingsState = (storedSettings) => {
     websiteName:
       String(safeSettings.websiteName || "").trim() || defaultSettings.websiteName,
     logoData: safeSettings.logoData || defaultSettings.logoData,
+    productDepartments: sanitizeProductDepartments(safeSettings.productDepartments),
     tshirtCategories: sanitizeTshirtCategories(safeSettings.tshirtCategories),
     banners: normalizedStoredBanners,
     homeHighlights: normalizeStoredHomeHighlights(
@@ -1024,6 +1065,7 @@ const normalizeProductsState = (
   initialSettings = defaultSettings
 ) => {
   const categories = sanitizeTshirtCategories(initialSettings.tshirtCategories);
+  const departments = sanitizeProductDepartments(initialSettings.productDepartments);
   const safeProducts =
     Array.isArray(storedProducts) && storedProducts.length > 0
       ? storedProducts
@@ -1031,17 +1073,22 @@ const normalizeProductsState = (
 
   const normalizedProducts = safeProducts
     .map(normalizeProduct)
-    .filter((product) => product.department !== "shirts")
     .map((product, index) => {
       const normalizedCategory = normalizeCategoryName(product.category);
+      const normalizedDepartment = normalizeDepartmentName(product.department);
+      const safeDepartment = departments.includes(normalizedDepartment)
+        ? normalizedDepartment
+        : DEFAULT_PRODUCT_DEPARTMENTS[0];
 
       return {
         ...product,
-        department: "tshirts",
+        department: safeDepartment,
         category:
-          categories.includes(normalizedCategory)
+          safeDepartment === "tshirts" && categories.includes(normalizedCategory)
             ? normalizedCategory
-            : categories[index % categories.length] || DEFAULT_TSHIRT_CATEGORIES[0]
+            : safeDepartment === "tshirts"
+              ? categories[index % categories.length] || DEFAULT_TSHIRT_CATEGORIES[0]
+              : normalizedCategory || "General"
       };
     });
 
@@ -1050,14 +1097,20 @@ const normalizeProductsState = (
     : defaultProducts.map((product, index) => {
         const normalizedProduct = normalizeProduct(product);
         const normalizedCategory = normalizeCategoryName(normalizedProduct.category);
+        const normalizedDepartment = normalizeDepartmentName(normalizedProduct.department);
+        const safeDepartment = departments.includes(normalizedDepartment)
+          ? normalizedDepartment
+          : DEFAULT_PRODUCT_DEPARTMENTS[0];
 
         return {
           ...normalizedProduct,
-          department: "tshirts",
+          department: safeDepartment,
           category:
-            categories.includes(normalizedCategory)
+            safeDepartment === "tshirts" && categories.includes(normalizedCategory)
               ? normalizedCategory
-              : categories[index % categories.length] || DEFAULT_TSHIRT_CATEGORIES[0]
+              : safeDepartment === "tshirts"
+                ? categories[index % categories.length] || DEFAULT_TSHIRT_CATEGORIES[0]
+                : normalizedCategory || "General"
         };
       });
 };
@@ -1085,7 +1138,11 @@ const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 
 const normalizePhone = (value) => String(value || "").replace(/\D/g, "");
 
+const formatDateTimeLabel = (value) =>
+  new Date(Number(value) || Date.now()).toLocaleString("en-IN");
+
 const buildUserDocId = (email) => normalizeEmail(email);
+const RETURN_REQUEST_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 
 const createOrderId = () => {
   const datePrefix = new Date()
@@ -1141,6 +1198,20 @@ const normalizeOrderRecord = (record = {}) => {
   };
   const userEmail = normalizeEmail(record.userEmail || customer.email);
   const userPhone = normalizePhone(record.userPhone || customer.phone);
+  const returnRequest =
+    record.returnRequest && typeof record.returnRequest === "object"
+      ? {
+          name: String(record.returnRequest.name || "").trim(),
+          phone: String(record.returnRequest.phone || "").trim(),
+          reason: String(record.returnRequest.reason || "").trim(),
+          requestedAt: Number(record.returnRequest.requestedAt) || 0,
+          requestedAtLabel:
+            String(record.returnRequest.requestedAtLabel || "").trim() ||
+            (record.returnRequest.requestedAt
+              ? formatDateTimeLabel(record.returnRequest.requestedAt)
+              : "")
+        }
+      : null;
 
   return {
     ...record,
@@ -1158,8 +1229,16 @@ const normalizeOrderRecord = (record = {}) => {
     codCharge: Number(record.codCharge || 0),
     auraPointsUsed: Number(record.auraPointsUsed || 0),
     remainingPayable: Number(record.remainingPayable ?? record.total ?? 0),
+    deliveredAt: Number(record.deliveredAt) || 0,
+    deliveredAtLabel:
+      String(record.deliveredAtLabel || "").trim() ||
+      (record.deliveredAt ? formatDateTimeLabel(record.deliveredAt) : ""),
     refundRequested: Boolean(record.refundRequested),
     returnRequested: Boolean(record.returnRequested),
+    returnRequestStatus:
+      String(record.returnRequestStatus || "").trim() ||
+      (record.returnRequested ? "Pending" : ""),
+    returnRequest,
     customer: {
       ...customer,
       email: userEmail || String(customer.email || "").trim(),
@@ -1189,6 +1268,37 @@ const doesOrderBelongToUser = (order, userRecord) => {
       (email && orderEmail && email === orderEmail) ||
       (phone && orderPhone && phone === orderPhone)
   );
+};
+
+const getReturnWindowDeadline = (order) => {
+  const deliveredAt = Number(order?.deliveredAt || 0);
+  return deliveredAt > 0 ? deliveredAt + RETURN_REQUEST_WINDOW_MS : 0;
+};
+
+const canRequestReturnForOrder = (order) => {
+  const deliveredAt = Number(order?.deliveredAt || 0);
+
+  return Boolean(
+    order?.status === "Delivered" &&
+      deliveredAt > 0 &&
+      Date.now() <= getReturnWindowDeadline(order) &&
+      !order?.returnRequested
+  );
+};
+
+const matchesOrderSearch = (order, term) => {
+  const normalizedTerm = String(term || "").trim().toLowerCase();
+
+  if (!normalizedTerm) {
+    return true;
+  }
+
+  return [
+    String(order?.id || ""),
+    String(order?.customer?.name || ""),
+    String(order?.customer?.phone || ""),
+    String(order?.userPhone || "")
+  ].some((value) => value.toLowerCase().includes(normalizedTerm));
 };
 
 const formatCurrency = (amount) =>
@@ -1731,6 +1841,7 @@ export default function App() {
   });
   const [selectedAdminOrderId, setSelectedAdminOrderId] = useState("");
   const [categoryDraft, setCategoryDraft] = useState("");
+  const [departmentDraft, setDepartmentDraft] = useState("");
   const [navHidden, setNavHidden] = useState(false);
   const [zoomedMedia, setZoomedMedia] = useState(null);
   const [toast, setToast] = useState("");
@@ -1775,6 +1886,14 @@ export default function App() {
     gender: "",
     birthdate: ""
   });
+  const [returnRequestForm, setReturnRequestForm] = useState({
+    orderId: "",
+    name: "",
+    phone: "",
+    reason: ""
+  });
+  const [adminOrdersSearch, setAdminOrdersSearch] = useState("");
+  const [adminReturnsSearch, setAdminReturnsSearch] = useState("");
 
   const [cart, setCart] = useState(() => readStorage(STORAGE_KEYS.cart, []));
   const [wishlist, setWishlist] = useState(() =>
@@ -1816,6 +1935,10 @@ export default function App() {
   const storeContactEmail = settings.contactEmail || defaultSettings.contactEmail;
   const storeAboutUs = settings.aboutUs || defaultSettings.aboutUs;
   const managedTshirtCategories = useMemo(() => sanitizeTshirtCategories(settings.tshirtCategories), [settings.tshirtCategories]);
+  const managedProductDepartments = useMemo(
+    () => sanitizeProductDepartments(settings.productDepartments),
+    [settings.productDepartments]
+  );
   const selectedProduct = useMemo(() => products.find((item) => item.id === selectedProductId) || null, [products, selectedProductId]);
   const enabledPaymentOptions = useMemo(() => paymentCatalog.filter(
     (option) => settings.paymentMethods?.[option.value]
@@ -1838,9 +1961,7 @@ export default function App() {
   const searchSuggestions = useMemo(() => hasActiveSearch
     ? products
         .filter(
-          (product) =>
-            product.department === "tshirts" &&
-            buildProductSearchHaystack(product).includes(normalizedSearchTerm)
+          (product) => buildProductSearchHaystack(product).includes(normalizedSearchTerm)
         )
         .sort((left, right) => {
           const rankDifference =
@@ -1863,18 +1984,27 @@ export default function App() {
         label: category
       }))
   ], [managedTshirtCategories]);
+  const departmentOptions = useMemo(
+    () =>
+      managedProductDepartments.map((department) => ({
+        value: department,
+        label: formatDepartmentLabel(department)
+      })),
+    [managedProductDepartments]
+  );
 
   const filteredProducts = useMemo(() => products
     .filter((product) => {
-      if (product.department !== "tshirts") {
-        return false;
-      }
-
       if (!hasActiveSearch && selectedDepartment !== "all" && product.department !== selectedDepartment) {
         return false;
       }
 
-      if (!hasActiveSearch && selectedCategory !== "all" && product.category !== selectedCategory) {
+      if (
+        !hasActiveSearch &&
+        selectedDepartment === "tshirts" &&
+        selectedCategory !== "all" &&
+        product.category !== selectedCategory
+      ) {
         return false;
       }
 
@@ -1902,9 +2032,23 @@ export default function App() {
     : managedTshirtCategories, [productForm.category, managedTshirtCategories]);
   const productFormImages = getProductImages(productForm);
   const productFormVideo = getProductVideo(productForm);
+  const filteredAdminOrders = useMemo(
+    () => uniqueOrders.filter((order) => matchesOrderSearch(order, adminOrdersSearch)),
+    [uniqueOrders, adminOrdersSearch]
+  );
+  const returnOrders = useMemo(
+    () => uniqueOrders.filter((order) => order.returnRequested || order.returnRequestStatus),
+    [uniqueOrders]
+  );
+  const filteredReturnOrders = useMemo(
+    () => returnOrders.filter((order) => matchesOrderSearch(order, adminReturnsSearch)),
+    [returnOrders, adminReturnsSearch]
+  );
   const selectedAdminOrder = useMemo(() => 
-    uniqueOrders.find((order) => order.id === selectedAdminOrderId) || uniqueOrders[0] || null,
-    [uniqueOrders, selectedAdminOrderId]
+    filteredAdminOrders.find((order) => order.id === selectedAdminOrderId) ||
+      filteredAdminOrders[0] ||
+      null,
+    [filteredAdminOrders, selectedAdminOrderId]
   );
   const managedHomepageBanners = useMemo(() => normalizeStoredBanners(settings.banners), [settings.banners]);
   const homepageBanners = useMemo(() => 
@@ -2011,7 +2155,7 @@ export default function App() {
         status: "active",
         joinedAt: Date.now(),
         lastLoginAt: Date.now(),
-        auraPoints: ADMIN_EMAILS.includes(userEmail) ? 0 : 100
+        auraPoints: 0
       }
     );
     const scopedLegacyOrders = sortOrdersNewestFirst(
@@ -2635,9 +2779,7 @@ export default function App() {
         auraPoints:
           existing?.auraPoints !== undefined
             ? Number(existing.auraPoints)
-            : ADMIN_EMAILS.includes(email)
-              ? 0
-              : 100
+            : 0
       });
 
       setUsers((prev) => [
@@ -3445,7 +3587,7 @@ export default function App() {
       role: ADMIN_EMAILS.includes(email) ? "admin" : "customer",
       status: "active",
       photo: "",
-      auraPoints: Number(userForm.auraPoints || 0),
+      auraPoints: 0,
       joinedAt: Date.now(),
       lastLoginAt: null,
       auraHistory: []
@@ -3608,7 +3750,11 @@ export default function App() {
 
   const buildEmptyProductForm = () => ({
     ...emptyProductForm,
-    category: managedTshirtCategories[0] || DEFAULT_TSHIRT_CATEGORIES[0],
+    department: managedProductDepartments[0] || DEFAULT_PRODUCT_DEPARTMENTS[0],
+    category:
+      (managedProductDepartments[0] || DEFAULT_PRODUCT_DEPARTMENTS[0]) === "tshirts"
+        ? managedTshirtCategories[0] || DEFAULT_TSHIRT_CATEGORIES[0]
+        : "General",
     mediaImages: [],
     videoData: "",
     imageData: ""
@@ -3769,11 +3915,85 @@ export default function App() {
     setToast("T-shirt category removed.");
   };
 
+  const addProductDepartment = () => {
+    const nextDepartment = normalizeDepartmentName(departmentDraft);
+
+    if (!nextDepartment) {
+      setToast("Enter a product section name.");
+      return;
+    }
+
+    if (managedProductDepartments.includes(nextDepartment)) {
+      setToast("This product section already exists.");
+      return;
+    }
+
+    setSettings((prev) => ({
+      ...prev,
+      productDepartments: [...sanitizeProductDepartments(prev.productDepartments), nextDepartment]
+    }));
+
+    setDepartmentDraft("");
+    setToast("Product section added.");
+  };
+
+  const removeProductDepartment = (departmentToRemove) => {
+    if (managedProductDepartments.length <= 1) {
+      setToast("Keep at least one product section.");
+      return;
+    }
+
+    const nextDepartments = managedProductDepartments.filter(
+      (department) => department !== departmentToRemove
+    );
+    const fallbackDepartment = nextDepartments[0] || DEFAULT_PRODUCT_DEPARTMENTS[0];
+
+    setSettings((prev) => ({
+      ...prev,
+      productDepartments: nextDepartments
+    }));
+
+    setProducts((prev) =>
+      prev.map((product) =>
+        product.department === departmentToRemove
+          ? {
+              ...product,
+              department: fallbackDepartment,
+              category:
+                fallbackDepartment === "tshirts"
+                  ? managedTshirtCategories[0] || DEFAULT_TSHIRT_CATEGORIES[0]
+                  : product.category || "General"
+            }
+          : product
+      )
+    );
+
+    setProductForm((prev) =>
+      prev.department === departmentToRemove
+        ? {
+            ...prev,
+            department: fallbackDepartment,
+            category:
+              fallbackDepartment === "tshirts"
+                ? managedTshirtCategories[0] || DEFAULT_TSHIRT_CATEGORIES[0]
+                : prev.category || "General"
+          }
+        : prev
+    );
+
+    if (selectedDepartment === departmentToRemove) {
+      setSelectedDepartment("all");
+      setSelectedCategory("all");
+    }
+
+    setToast("Product section removed.");
+  };
+
   const editProduct = (product) => {
     setProductForm({
       id: product.id,
       name: product.name,
-      department: "tshirts",
+      department: normalizeDepartmentName(product.department) || DEFAULT_PRODUCT_DEPARTMENTS[0],
       category: normalizeCategoryName(product.category),
       price: String(product.price),
       discount: String(product.discount),
@@ -3796,9 +4016,14 @@ export default function App() {
       return;
     }
 
+    const normalizedDepartment =
+      normalizeDepartmentName(productForm.department) || DEFAULT_PRODUCT_DEPARTMENTS[0];
     const normalizedCategory = normalizeCategoryName(productForm.category);
 
-    if (!managedTshirtCategories.includes(normalizedCategory)) {
+    if (
+      normalizedDepartment === "tshirts" &&
+      !managedTshirtCategories.includes(normalizedCategory)
+    ) {
       setToast("Pick a category from the T-shirt category manager.");
       return;
     }
@@ -3806,8 +4031,11 @@ export default function App() {
     const nextProduct = normalizeProduct({
       id: productForm.id || createId("prd"),
       name: productForm.name.trim(),
-      department: "tshirts",
-      category: normalizedCategory,
+      department: normalizedDepartment,
+      category:
+        normalizedDepartment === "tshirts"
+          ? normalizedCategory
+          : productForm.category.trim() || "General",
       price: Number(productForm.price),
       discount: Number(productForm.discount),
       stock: Number(productForm.stock),
@@ -3872,9 +4100,19 @@ export default function App() {
       return;
     }
 
+    const deliveredAt =
+      status === "Delivered"
+        ? Number(existingOrder.deliveredAt) || Date.now()
+        : Number(existingOrder.deliveredAt) || 0;
+
     const nextOrder = normalizeOrderRecord({
       ...existingOrder,
       status,
+      deliveredAt,
+      deliveredAtLabel:
+        status === "Delivered" || deliveredAt
+          ? formatDateTimeLabel(deliveredAt)
+          : "",
       refundRequested:
         status === "Refund Requested" ? true : existingOrder.refundRequested,
       returnRequested:
@@ -3892,6 +4130,97 @@ export default function App() {
     } catch (error) {
       console.error(error);
       setToast("Unable to update the order right now.");
+    }
+  };
+
+  const openReturnRequestForm = (order) => {
+    setReturnRequestForm({
+      orderId: order.id,
+      name: currentUserRecord?.name || user?.name || order.customer?.name || "",
+      phone: currentUserRecord?.phone || order.customer?.phone || "",
+      reason: ""
+    });
+  };
+
+  const submitReturnRequest = async (orderId) => {
+    const existingOrder = orders.find((entry) => entry.id === orderId);
+
+    if (!existingOrder) {
+      setToast("Order not found.");
+      return;
+    }
+
+    if (!canRequestReturnForOrder(existingOrder)) {
+      setToast("Return request window is closed for this order.");
+      return;
+    }
+
+    const name = String(returnRequestForm.name || "").trim();
+    const phone = String(returnRequestForm.phone || "").trim();
+    const reason = String(returnRequestForm.reason || "").trim();
+
+    if (!name || !phone || !reason) {
+      setToast("Enter name, phone number, and return reason.");
+      return;
+    }
+
+    if (!/^\d{10}$/.test(phone)) {
+      setToast("Please enter a valid 10-digit phone number.");
+      return;
+    }
+
+    const requestedAt = Date.now();
+    const nextOrder = normalizeOrderRecord({
+      ...existingOrder,
+      returnRequested: true,
+      returnRequestStatus: "Pending",
+      returnRequest: {
+        name,
+        phone,
+        reason,
+        requestedAt,
+        requestedAtLabel: formatDateTimeLabel(requestedAt)
+      }
+    });
+
+    try {
+      await setDoc(doc(db, FIRESTORE_PATHS.ordersCollection, orderId), nextOrder, {
+        merge: true
+      });
+      setOrders((prev) =>
+        prev.map((entry) => (entry.id === orderId ? nextOrder : entry))
+      );
+      setReturnRequestForm({ orderId: "", name: "", phone: "", reason: "" });
+      setToast("Return request submitted.");
+    } catch (error) {
+      console.error(error);
+      setToast("Unable to submit the return request right now.");
+    }
+  };
+
+  const updateReturnRequestStatus = async (orderId, returnRequestStatus) => {
+    const existingOrder = orders.find((entry) => entry.id === orderId);
+
+    if (!existingOrder || !existingOrder.returnRequested) {
+      return;
+    }
+
+    const nextOrder = normalizeOrderRecord({
+      ...existingOrder,
+      returnRequestStatus
+    });
+
+    try {
+      await setDoc(doc(db, FIRESTORE_PATHS.ordersCollection, orderId), nextOrder, {
+        merge: true
+      });
+      setOrders((prev) =>
+        prev.map((entry) => (entry.id === orderId ? nextOrder : entry))
+      );
+      setToast(`Return request ${returnRequestStatus.toLowerCase()}.`);
+    } catch (error) {
+      console.error(error);
+      setToast("Unable to update the return request right now.");
     }
   };
 
@@ -4525,6 +4854,7 @@ export default function App() {
               <div className="product-card__text">
                 <h3 className="product-card__title">{product.name}</h3>
                 <p className="product-card__subtitle">{productSubtitle}</p>
+                <p className="product-card__kalawa-note">A symbol of who we are.</p>
               </div>
 
               <button
@@ -5120,6 +5450,11 @@ export default function App() {
                     padding: "18px"
                   }}
                 >
+                  {(() => {
+                    const cartProduct = products.find((product) => product.id === item.productId) || null;
+                    const cartImage = cartProduct ? getProductImages(cartProduct)[0] : "";
+
+                    return (
                   <div
                     style={{
                       display: "flex",
@@ -5128,17 +5463,34 @@ export default function App() {
                       gap: "14px"
                     }}
                   >
-                    <div>
-                      <h3 style={{ margin: "0 0 8px" }}>{item.name}</h3>
-                      <p style={{ margin: "4px 0", color: tone.muted }}>
-                        {item.color} | {item.size} | Qty {item.quantity}
-                      </p>
-                      <p style={{ margin: 0, fontWeight: 700 }}>{formatCurrency(item.unitPrice * item.quantity)}</p>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", minWidth: 0 }}>
+                      {cartImage ? (
+                        <img
+                          src={cartImage}
+                          alt={item.name}
+                          style={{
+                            width: "56px",
+                            height: "56px",
+                            objectFit: "cover",
+                            borderRadius: "12px",
+                            flexShrink: 0
+                          }}
+                        />
+                      ) : null}
+                      <div style={{ minWidth: 0 }}>
+                        <h3 style={{ margin: "0 0 8px" }}>{item.name}</h3>
+                        <p style={{ margin: "4px 0", color: tone.muted }}>
+                          {item.color} | {item.size} | Qty {item.quantity}
+                        </p>
+                        <p style={{ margin: 0, fontWeight: 700 }}>{formatCurrency(item.unitPrice * item.quantity)}</p>
+                      </div>
                     </div>
                     <button onClick={() => removeFromCart(item.cartId)} style={secondaryButtonStyle}>
                       Remove
                     </button>
                   </div>
+                    );
+                  })()}
 
                   <div style={{ display: "flex", gap: "10px", marginTop: "14px" }}>
                     <button onClick={() => updateCartQuantity(item.cartId, -1)} style={secondaryButtonStyle}>
@@ -5220,24 +5572,46 @@ export default function App() {
           <h2 style={{ marginTop: 0 }}>Delivery Summary</h2>
           <div style={{ display: "grid", gap: "12px" }}>
             {cart.map((item) => (
-              <div
-                key={item.cartId}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: "12px",
-                  paddingBottom: "12px",
-                  borderBottom: `1px solid ${tone.line}`
-                }}
-              >
-                <div>
-                  <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{item.name}</p>
-                  <p style={{ margin: 0, color: tone.muted }}>
-                    {item.size} | {item.color} | Qty {item.quantity}
-                  </p>
-                </div>
-                <span>{formatCurrency(item.unitPrice * item.quantity)}</span>
-              </div>
+              (() => {
+                const cartProduct = products.find((product) => product.id === item.productId) || null;
+                const cartImage = cartProduct ? getProductImages(cartProduct)[0] : "";
+
+                return (
+                  <div
+                    key={item.cartId}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                      paddingBottom: "12px",
+                      borderBottom: `1px solid ${tone.line}`
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", minWidth: 0 }}>
+                      {cartImage ? (
+                        <img
+                          src={cartImage}
+                          alt={item.name}
+                          style={{
+                            width: "46px",
+                            height: "46px",
+                            objectFit: "cover",
+                            borderRadius: "10px",
+                            flexShrink: 0
+                          }}
+                        />
+                      ) : null}
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{item.name}</p>
+                        <p style={{ margin: 0, color: tone.muted }}>
+                          {item.size} | {item.color} | Qty {item.quantity}
+                        </p>
+                      </div>
+                    </div>
+                    <span>{formatCurrency(item.unitPrice * item.quantity)}</span>
+                  </div>
+                );
+              })()
             ))}
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: "16px", fontWeight: 800 }}>
@@ -5468,6 +5842,74 @@ export default function App() {
               {checkoutForm.city || "-"} {checkoutForm.pincode || ""}
             </p>
             <div style={{ display: "grid", gap: "14px" }}>
+              <div style={{ display: "grid", gap: "10px" }}>
+                {cart.map((item) => {
+                  const cartProduct = products.find((product) => product.id === item.productId) || null;
+                  const cartImage = cartProduct ? getProductImages(cartProduct)[0] : "";
+
+                  return (
+                    <div
+                      key={item.cartId}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "12px"
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+                        {cartImage ? (
+                          <img
+                            src={cartImage}
+                            alt={item.name}
+                            style={{
+                              width: "42px",
+                              height: "42px",
+                              objectFit: "cover",
+                              borderRadius: "10px",
+                              flexShrink: 0
+                            }}
+                          />
+                        ) : null}
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ margin: "0 0 2px", fontWeight: 700, fontSize: "14px" }}>{item.name}</p>
+                          <p style={{ margin: 0, color: tone.muted, fontSize: "12px" }}>
+                            {item.size} | {item.color}
+                          </p>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: "13px", color: tone.muted }}>x{item.quantity}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                  padding: "10px 12px",
+                  borderRadius: "14px",
+                  background: tone.soft
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+                  <img
+                    src={kalawaImage}
+                    alt="Free Kalawa"
+                    style={{
+                      width: "48px",
+                      height: "28px",
+                      objectFit: "cover",
+                      borderRadius: "999px",
+                      flexShrink: 0
+                    }}
+                  />
+                  <span style={{ fontSize: "14px", color: tone.body }}>Free Kalawa</span>
+                </div>
+                <span style={{ fontSize: "14px", color: tone.muted }}>Included</span>
+              </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Items</span>
                 <span>{cartCount}</span>
@@ -5680,6 +6122,92 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
+                  {!isAdmin && order.deliveredAtLabel && (
+                    <div style={{ marginTop: "14px", fontSize: "13px", color: tone.muted }}>
+                      Delivered: {order.deliveredAtLabel}
+                    </div>
+                  )}
+
+                  {!isAdmin && order.returnRequested && (
+                    <div
+                      style={{
+                        marginTop: "16px",
+                        padding: "14px",
+                        borderRadius: "14px",
+                        background: tone.soft,
+                        border: `1px solid ${tone.line}`,
+                        display: "grid",
+                        gap: "8px"
+                      }}
+                    >
+                      <p style={{ margin: 0 }}>
+                        <strong>Return Status:</strong> {order.returnRequestStatus || "Pending"}
+                      </p>
+                      <p style={{ margin: 0, color: tone.muted }}>
+                        If admin approves the return, Aura Points will be credited to wallet after product return verification. No cash refund will be provided*
+                      </p>
+                    </div>
+                  )}
+
+                  {!isAdmin && canRequestReturnForOrder(order) && (
+                    <div style={{ marginTop: "16px", display: "grid", gap: "12px" }}>
+                      <button
+                        onClick={() =>
+                          returnRequestForm.orderId === order.id
+                            ? setReturnRequestForm({ orderId: "", name: "", phone: "", reason: "" })
+                            : openReturnRequestForm(order)
+                        }
+                        style={secondaryButtonStyle}
+                      >
+                        Return Request
+                      </button>
+
+                      {returnRequestForm.orderId === order.id && (
+                        <div
+                          style={{
+                            padding: "16px",
+                            borderRadius: "16px",
+                            border: `1px solid ${tone.line}`,
+                            background: tone.soft,
+                            display: "grid",
+                            gap: "12px"
+                          }}
+                        >
+                          <input
+                            value={returnRequestForm.name}
+                            onChange={(event) =>
+                              setReturnRequestForm((prev) => ({ ...prev, name: event.target.value }))
+                            }
+                            placeholder="Name"
+                            style={inputStyle}
+                          />
+                          <input
+                            value={returnRequestForm.phone}
+                            onChange={(event) =>
+                              setReturnRequestForm((prev) => ({ ...prev, phone: event.target.value }))
+                            }
+                            placeholder="Phone Number"
+                            style={inputStyle}
+                          />
+                          <textarea
+                            value={returnRequestForm.reason}
+                            onChange={(event) =>
+                              setReturnRequestForm((prev) => ({ ...prev, reason: event.target.value }))
+                            }
+                            placeholder="Return Reason"
+                            style={textareaStyle}
+                          />
+                          <button
+                            onClick={() => submitReturnRequest(order.id)}
+                            style={primaryButtonStyle}
+                          >
+                            Submit Return Request
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -5801,7 +6329,7 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", minWidth: 0 }}>
                   {user.photo ? (
                     <img
                       src={user.photo}
@@ -5830,9 +6358,9 @@ export default function App() {
                       <UserIcon />
                     </div>
                   )}
-                  <div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
                     <h3 style={{ margin: "0 0 4px" }}>{currentUserRecord?.name || user.name}</h3>
-                    <p style={{ margin: 0, color: tone.muted }}>{user.email}</p>
+                    <p style={{ margin: 0, color: tone.muted, overflowWrap: "anywhere", wordBreak: "break-word" }}>{user.email}</p>
                     {currentUserRecord?.phone && (
                       <p style={{ margin: "4px 0 0", fontSize: "13px", color: tone.muted }}>{currentUserRecord.phone}</p>
                     )}
@@ -6296,16 +6824,45 @@ export default function App() {
                 >
                   <div className="admin-stack">
                     <input value={productForm.name} onChange={(event) => setProductFormField("name", event.target.value)} placeholder="Product name" style={inputStyle} />
-                    <select value="tshirts" onChange={() => undefined} style={selectStyle}>
-                      <option value="tshirts">T-Shirts</option>
-                    </select>
-                    <select value={productForm.category} onChange={(event) => setProductFormField("category", event.target.value)} style={selectStyle}>
-                      {availableProductCategories.map((category) => (
-                        <option key={category} value={category}>
-                          {category}
+                    <select
+                      value={productForm.department}
+                      onChange={(event) => {
+                        const nextDepartment = event.target.value;
+                        setProductForm((prev) => ({
+                          ...prev,
+                          department: nextDepartment,
+                          category:
+                            nextDepartment === "tshirts"
+                              ? managedTshirtCategories[0] || DEFAULT_TSHIRT_CATEGORIES[0]
+                              : prev.category === "General"
+                                ? prev.category
+                                : "General"
+                        }));
+                      }}
+                      style={selectStyle}
+                    >
+                      {departmentOptions.map((department) => (
+                        <option key={department.value} value={department.value}>
+                          {department.label}
                         </option>
                       ))}
                     </select>
+                    {productForm.department === "tshirts" ? (
+                      <select value={productForm.category} onChange={(event) => setProductFormField("category", event.target.value)} style={selectStyle}>
+                        {availableProductCategories.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        value={productForm.category}
+                        onChange={(event) => setProductFormField("category", event.target.value)}
+                        placeholder="Category"
+                        style={inputStyle}
+                      />
+                    )}
                     <textarea value={productForm.description} onChange={(event) => setProductFormField("description", event.target.value)} placeholder="Description" style={textareaStyle} />
                     <input value={productForm.colors} onChange={(event) => setProductFormField("colors", event.target.value)} placeholder="Colours: Black, White" style={inputStyle} />
                     <input value={productForm.sizes} onChange={(event) => setProductFormField("sizes", event.target.value)} placeholder="Sizes: S, M, L, XL" style={inputStyle} />
@@ -6535,12 +7092,71 @@ export default function App() {
                         display: "grid",
                         gap: "12px"
                       }}
+                      >
+                        <div>
+                          <h3 style={{ margin: "0 0 6px" }}>Manage Product Sections</h3>
+                          <p style={{ margin: 0, color: tone.muted }}>
+                            Add a future section here and it will appear beside T-Shirts in the top navigation.
+                          </p>
+                        </div>
+                        <div className="admin-input-action-grid">
+                          <input
+                            value={departmentDraft}
+                            onChange={(event) => setDepartmentDraft(event.target.value)}
+                            placeholder="Add section"
+                            style={inputStyle}
+                          />
+                          <button onClick={addProductDepartment} style={secondaryButtonStyle}>
+                            Add
+                          </button>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                          {managedProductDepartments.map((department) => (
+                            <div
+                              key={department}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "10px",
+                                padding: "10px 12px",
+                                borderRadius: "999px",
+                                border: `1px solid ${tone.border}`,
+                                background: tone.white
+                              }}
+                            >
+                              <span>{formatDepartmentLabel(department)}</span>
+                              <button
+                                onClick={() => removeProductDepartment(department)}
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  color: tone.muted,
+                                  cursor: "pointer",
+                                  fontWeight: 700
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                    <div
+                      style={{
+                        border: `1px solid ${tone.line}`,
+                        borderRadius: "18px",
+                        padding: "16px",
+                        background: tone.soft,
+                        display: "grid",
+                        gap: "12px"
+                      }}
                     >
                       <div>
-                        <h3 style={{ margin: "0 0 6px" }}>Manage T-Shirt Categories</h3>
-                        <p style={{ margin: 0, color: tone.muted }}>
-                          These options control the T-shirt menu and product category list.
-                        </p>
+                          <h3 style={{ margin: "0 0 6px" }}>Manage T-Shirt Categories</h3>
+                          <p style={{ margin: 0, color: tone.muted }}>
+                            These options control the T-shirt menu and product category list.
+                          </p>
                       </div>
                       <div className="admin-input-action-grid">
                         <input
@@ -6636,6 +7252,14 @@ export default function App() {
             {adminTab === "orders" && (
               <>
                 <h2 style={{ marginTop: 0 }}>Order Management</h2>
+                <div style={{ marginBottom: "18px" }}>
+                  <input
+                    value={adminOrdersSearch}
+                    onChange={(event) => setAdminOrdersSearch(event.target.value)}
+                    placeholder="Search by Order ID, Customer Name, or Phone Number"
+                    style={inputStyle}
+                  />
+                </div>
                 <div
                   style={{
                     display: "grid",
@@ -6644,7 +7268,7 @@ export default function App() {
                   }}
                 >
                   <div style={{ display: "grid", gap: "12px" }}>
-                    {uniqueOrders.map((order) => (
+                    {filteredAdminOrders.map((order) => (
                       <button
                         key={order.id}
                         onClick={() => setSelectedAdminOrderId(order.id)}
@@ -6678,12 +7302,22 @@ export default function App() {
                           <p style={{ margin: 0, color: tone.muted }}>
                             Created: {selectedAdminOrder.dateLabel}
                           </p>
+                          {selectedAdminOrder.deliveredAtLabel && (
+                            <p style={{ margin: 0, color: tone.muted }}>
+                              Delivered: {selectedAdminOrder.deliveredAtLabel}
+                            </p>
+                          )}
                           <p style={{ margin: 0, color: tone.muted }}>
                             Customer: <strong>{selectedAdminOrder.customer.name}</strong> ({selectedAdminOrder.customer.phone})
                           </p>
                           <p style={{ margin: 0, color: tone.muted }}>
                             Address: {selectedAdminOrder.customer.address}, {selectedAdminOrder.customer.city} {selectedAdminOrder.customer.pincode}
                           </p>
+                          {selectedAdminOrder.returnRequested && (
+                            <p style={{ margin: 0, color: tone.muted }}>
+                              Return Status: <strong>{selectedAdminOrder.returnRequestStatus || "Pending"}</strong>
+                            </p>
+                          )}
                         </div>
 
                         {selectedAdminOrder.paymentMethod === "upi" && (
@@ -6826,6 +7460,95 @@ export default function App() {
                     )}
                   </div>
                 </div>
+              </>
+            )}
+
+            {adminTab === "returns" && (
+              <>
+                <h2 style={{ marginTop: 0 }}>Returns</h2>
+                <div style={{ marginBottom: "18px" }}>
+                  <input
+                    value={adminReturnsSearch}
+                    onChange={(event) => setAdminReturnsSearch(event.target.value)}
+                    placeholder="Search by Order ID, Customer Name, or Phone Number"
+                    style={inputStyle}
+                  />
+                </div>
+                {filteredReturnOrders.length === 0 ? (
+                  <p style={{ margin: 0, color: tone.muted }}>No return requests found.</p>
+                ) : (
+                  <div style={{ display: "grid", gap: "16px" }}>
+                    {filteredReturnOrders.map((order) => (
+                      <div
+                        key={order.id}
+                        style={{
+                          border: `1px solid ${tone.line}`,
+                          borderRadius: "18px",
+                          padding: "18px",
+                          display: "grid",
+                          gap: "12px"
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: "12px",
+                            flexWrap: "wrap"
+                          }}
+                        >
+                          <div>
+                            <h3 style={{ margin: "0 0 6px" }}>{order.id}</h3>
+                            <p style={{ margin: 0, color: tone.muted }}>
+                              Customer: <strong>{order.returnRequest?.name || order.customer.name}</strong>
+                            </p>
+                          </div>
+                          <span
+                            style={{
+                              padding: "8px 12px",
+                              borderRadius: "999px",
+                              border: `1px solid ${tone.line}`,
+                              background: tone.soft,
+                              fontWeight: 700
+                            }}
+                          >
+                            {order.returnRequestStatus || "Pending"}
+                          </span>
+                        </div>
+
+                        <div style={{ display: "grid", gap: "8px" }}>
+                          <p style={{ margin: 0, color: tone.muted }}>
+                            Phone Number: {order.returnRequest?.phone || order.customer.phone}
+                          </p>
+                          <p style={{ margin: 0, color: tone.muted }}>
+                            Reason: {order.returnRequest?.reason || "Not provided"}
+                          </p>
+                          <p style={{ margin: 0, color: tone.muted }}>
+                            Request Date/Time: {order.returnRequest?.requestedAtLabel || "Not available"}
+                          </p>
+                          <p style={{ margin: 0, color: tone.muted }}>
+                            Delivery Date: {order.deliveredAtLabel || "Not available"}
+                          </p>
+                        </div>
+
+                        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                          <button
+                            onClick={() => updateReturnRequestStatus(order.id, "Approved")}
+                            style={{ ...secondaryButtonStyle, background: "#e8f5e9", color: "#2e7d32", border: "1px solid #a5d6a7" }}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => updateReturnRequestStatus(order.id, "Rejected")}
+                            style={{ ...secondaryButtonStyle, background: "#ffebee", color: "#c62828", border: "1px solid #ef9a9a" }}
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </>
             )}
 
@@ -8025,46 +8748,57 @@ export default function App() {
             <MenuIcon />
           </button>
 
-          <div className="nav-menu-group" style={{ position: "relative" }} ref={tshirtRef}>
-            <button
-              onClick={() => setShowTshirtMenu((prev) => !prev)}
-              className="nav-link-button"
+          {managedProductDepartments.map((department) => (
+            <div
+              key={department}
+              className="nav-menu-group"
+              style={{ position: "relative" }}
+              ref={department === "tshirts" ? tshirtRef : undefined}
             >
-              T-Shirts
-            </button>
-
-            {showTshirtMenu && (
-              <div
-                className="nav-dropdown"
-                style={{
-                  background: tone.white,
-                  color: tone.body,
-                  border: `1px solid ${tone.line}`,
-                }}
+              <button
+                onClick={() =>
+                  department === "tshirts"
+                    ? setShowTshirtMenu((prev) => !prev)
+                    : openDepartment(department, "all")
+                }
+                className="nav-link-button"
               >
-                {tshirtCategories.map((category) => (
-                  <button
-                    key={category.value}
-                    onClick={() => openDepartment("tshirts", category.value)}
-                    className="nav-dropdown__button"
-                    style={{
-                      background:
-                        selectedDepartment === "tshirts" && selectedCategory === category.value
-                          ? tone.black
-                          : "transparent",
-                      color:
-                        selectedDepartment === "tshirts" && selectedCategory === category.value
-                          ? tone.white
-                          : tone.body,
-                      cursor: "pointer"
-                    }}
-                  >
-                    {category.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+                {formatDepartmentLabel(department)}
+              </button>
+
+              {department === "tshirts" && showTshirtMenu && (
+                <div
+                  className="nav-dropdown"
+                  style={{
+                    background: tone.white,
+                    color: tone.body,
+                    border: `1px solid ${tone.line}`,
+                  }}
+                >
+                  {tshirtCategories.map((category) => (
+                    <button
+                      key={category.value}
+                      onClick={() => openDepartment("tshirts", category.value)}
+                      className="nav-dropdown__button"
+                      style={{
+                        background:
+                          selectedDepartment === "tshirts" && selectedCategory === category.value
+                            ? tone.black
+                            : "transparent",
+                        color:
+                          selectedDepartment === "tshirts" && selectedCategory === category.value
+                            ? tone.white
+                            : tone.body,
+                        cursor: "pointer"
+                      }}
+                    >
+                      {category.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
 
         <div
@@ -8387,7 +9121,7 @@ export default function App() {
             <div style={{ marginTop: "24px" }}>
               {user ? (
                 <>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
                     {user.photo ? (
                       <img
                         src={user.photo}
@@ -8415,9 +9149,9 @@ export default function App() {
                         <UserIcon />
                       </div>
                     )}
-                    <div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
                       <h3 style={{ margin: "0 0 4px" }}>{user.name}</h3>
-                      <p style={{ margin: 0, color: "#bdbdbd", fontSize: "13px" }}>{user.email}</p>
+                      <p style={{ margin: 0, color: "#bdbdbd", fontSize: "13px", overflowWrap: "anywhere", wordBreak: "break-word" }}>{user.email}</p>
                     </div>
                   </div>
                 </>
@@ -8512,7 +9246,8 @@ export default function App() {
               alignItems: "center", 
               justifyContent: "center", 
               gap: "16px",
-              marginBottom: "-4px"
+              marginTop: "4px",
+              marginBottom: "0"
             }}>
               <span className="site-footer__brand-name" style={{ 
                 fontSize: "18px", 
@@ -8527,13 +9262,14 @@ export default function App() {
               </div>
             </div>
 
-            <hr className="site-footer__rule" style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.15)", margin: "-2px 0 2px" }} />
+            <hr className="site-footer__rule" style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.15)", margin: "2px 0 8px" }} />
 
             <div style={{ 
               display: "flex", 
               alignItems: "center", 
               justifyContent: "center", 
               gap: "8px", 
+              marginTop: "2px",
               marginBottom: "4px",
               opacity: 0.9
             }}>
