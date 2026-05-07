@@ -2687,9 +2687,24 @@ export default function App() {
       if (!ADMIN_EMAILS.includes(email)) {
         setAdminBackendAccess(null);
       }
-      const existing = usersRef.current.find(
+      const localExisting = usersRef.current.find(
         (entry) => normalizeEmail(entry.email) === email
       );
+      let remoteExisting = null;
+
+      try {
+        const remoteUserDoc = await getDoc(
+          doc(db, FIRESTORE_PATHS.usersCollection, buildUserDocId(email))
+        );
+
+        if (remoteUserDoc.exists()) {
+          remoteExisting = normalizeUserRecord(remoteUserDoc.data());
+        }
+      } catch (error) {
+        console.warn("Remote user fetch skipped:", error?.message || error);
+      }
+
+      const existing = remoteExisting || localExisting;
 
       if (existing?.status === "blocked") {
         setToast("This account is currently suspended.");
@@ -2715,7 +2730,10 @@ export default function App() {
         auraPoints:
           existing?.auraPoints !== undefined
             ? Number(existing.auraPoints)
-            : 0
+            : 0,
+        totalSpent: Number(existing?.totalSpent || 0),
+        totalOrders: Number(existing?.totalOrders || 0),
+        auraHistory: Array.isArray(existing?.auraHistory) ? existing.auraHistory : []
       });
 
       setUsers((prev) => [
@@ -6066,7 +6084,7 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", minWidth: 0, width: "100%" }}>
                   {user.photo ? (
                     <img
                       src={user.photo}
@@ -6095,9 +6113,9 @@ export default function App() {
                       <UserIcon />
                     </div>
                   )}
-                  <div>
+                  <div style={{ minWidth: 0, flex: 1, maxWidth: "100%", overflow: "hidden" }}>
                     <h3 style={{ margin: "0 0 4px" }}>{currentUserRecord?.name || user.name}</h3>
-                    <p style={{ margin: 0, color: tone.muted }}>{user.email}</p>
+                    <p style={{ margin: 0, color: tone.muted, maxWidth: "100%", whiteSpace: "normal", overflowWrap: "anywhere", wordBreak: "break-word" }}>{user.email}</p>
                     {currentUserRecord?.phone && (
                       <p style={{ margin: "4px 0 0", fontSize: "13px", color: tone.muted }}>{currentUserRecord.phone}</p>
                     )}
@@ -8759,7 +8777,7 @@ export default function App() {
             <div style={{ marginTop: "24px" }}>
               {user ? (
                 <>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, width: "100%" }}>
                     {user.photo ? (
                       <img
                         src={user.photo}
@@ -8787,9 +8805,9 @@ export default function App() {
                         <UserIcon />
                       </div>
                     )}
-                    <div>
+                    <div style={{ minWidth: 0, flex: 1, maxWidth: "100%", overflow: "hidden" }}>
                       <h3 style={{ margin: "0 0 4px" }}>{user.name}</h3>
-                      <p style={{ margin: 0, color: "#bdbdbd", fontSize: "13px" }}>{user.email}</p>
+                      <p style={{ margin: 0, color: "#bdbdbd", fontSize: "13px", maxWidth: "100%", whiteSpace: "normal", overflowWrap: "anywhere", wordBreak: "break-word" }}>{user.email}</p>
                     </div>
                   </div>
                 </>
@@ -8878,13 +8896,24 @@ export default function App() {
             textAlign: "center"
           }}
         >
-          <div style={{ ...shellStyle, maxWidth: "600px", margin: "0 auto" }}>
+          <div
+            style={{
+              ...shellStyle,
+              maxWidth: "600px",
+              margin: "0 auto",
+              paddingTop: "8px",
+              paddingBottom: "12px",
+              display: "grid",
+              justifyItems: "center",
+              rowGap: "12px"
+            }}
+          >
             <div className="site-footer__branding" style={{ 
               display: "flex", 
               alignItems: "center", 
               justifyContent: "center", 
               gap: "16px",
-              marginBottom: "-4px"
+              width: "100%"
             }}>
               <span className="site-footer__brand-name" style={{ 
                 fontSize: "18px", 
@@ -8899,14 +8928,22 @@ export default function App() {
               </div>
             </div>
 
-            <hr className="site-footer__rule" style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.15)", margin: "-2px 0 2px" }} />
+            <hr
+              className="site-footer__rule"
+              style={{
+                border: "none",
+                borderTop: "1px solid rgba(255,255,255,0.15)",
+                margin: 0,
+                width: "100%"
+              }}
+            />
 
             <div style={{ 
               display: "flex", 
               alignItems: "center", 
               justifyContent: "center", 
               gap: "8px", 
-              marginBottom: "4px",
+              width: "100%",
               opacity: 0.9
             }}>
               <LockIcon width={14} height={14} strokeWidth={2.5} />
@@ -8918,7 +8955,8 @@ export default function App() {
               justifyContent: "center", 
               gap: "24px", 
               flexWrap: "wrap",
-              transform: "translateY(4px)"
+              width: "100%",
+              marginTop: "14px"
             }}>
               {[
                 { label: "More", page: "more" },
