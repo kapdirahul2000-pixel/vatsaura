@@ -1252,6 +1252,44 @@
   font-size: 0.92rem;
 }
 
+.product-size-chart {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.product-size-chart__button {
+  width: fit-content;
+}
+
+.product-size-chart__panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 240ms ease, opacity 200ms ease;
+}
+
+.product-size-chart__panel--open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.product-size-chart__image-shell {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.product-size-chart__image {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: min(62vh, 34rem);
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  pointer-events: none;
+}
+
 .product-side__section {
   display: grid;
   gap: 0.8rem;
@@ -1437,7 +1475,7 @@
   padding: 0;
   background: transparent;
   cursor: zoom-in;
-  touch-action: pan-x pan-y;
+  touch-action: manipulation;
 }
 
 .product-media-asset {
@@ -1447,7 +1485,7 @@
   max-height: min(74vh, 52rem);
   object-fit: contain;
   background: transparent;
-  touch-action: pan-x pan-y;
+  touch-action: manipulation;
 }
 
 .product-media-asset--video {
@@ -1919,7 +1957,7 @@
     overscroll-behavior-x: contain;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
-    touch-action: pan-x;
+    touch-action: manipulation;
   }
 
   .product-media-column::-webkit-scrollbar {
@@ -1936,7 +1974,7 @@
     height: clamp(21rem, 62vh, 34rem);
     align-items: stretch;
     scroll-snap-align: start;
-    touch-action: pan-x;
+    touch-action: manipulation;
   }
 
   .product-media-frame,
@@ -1959,9 +1997,9 @@
   }
 
   .product-media-button,
-    .product-media-asset {
-      touch-action: pan-x !important;
-    }
+  .product-media-asset {
+    touch-action: manipulation !important;
+  }
 
   .product-media-button {
     pointer-events: auto !important;

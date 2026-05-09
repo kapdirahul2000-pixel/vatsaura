@@ -271,6 +271,7 @@ const emptyProductForm = {
   badge: "Signature",
   imageData: "",
   mediaImages: [],
+  sizeChartImage: "",
   videoData: ""
 };
 
@@ -1294,6 +1295,9 @@ const getProductImages = (product) => {
 const getProductVideo = (product) =>
   resolveCloudinaryMediaUrl(String(product?.videoData || "").trim());
 
+const getProductSizeChartImage = (product) =>
+  resolveCloudinaryMediaUrl(String(product?.sizeChartImage || "").trim());
+
 const getProductMediaItems = (product) => {
   const images = getProductImages(product).map((src, index) => ({
     id: `image-${index}`,
@@ -1339,6 +1343,7 @@ const normalizeProduct = (product) => ({
   availability: normalizeProductAvailability(product.availability, product.stock),
   createdAt: product.createdAt || Date.now(),
   mediaImages: getProductImages(product),
+  sizeChartImage: getProductSizeChartImage(product),
   videoData: getProductVideo(product),
   imageData: getProductImages(product)[0] || product.imageData || ""
 });
@@ -1773,6 +1778,7 @@ export default function App() {
   const [sortBy, setSortBy] = useState("featured");
   const [selectedProductId, setSelectedProductId] = useState("");
   const [productConfig, setProductConfig] = useState(null);
+  const [sizeChartOpen, setSizeChartOpen] = useState(false);
   const [checkoutForm, setCheckoutForm] = useState(initialCheckoutForm);
   const [paymentMethod, setPaymentMethod] = useState("upi");
   const [adminTab, setAdminTab] = useState("dashboard");
@@ -1968,6 +1974,7 @@ export default function App() {
     : managedTshirtCategories, [productForm.category, managedTshirtCategories]);
   const productFormImages = getProductImages(productForm);
   const productFormVideo = getProductVideo(productForm);
+  const productFormSizeChartImage = getProductSizeChartImage(productForm);
   const filteredAdminOrders = useMemo(
     () => uniqueOrders.filter((order) => matchesOrderSearch(order, adminOrdersSearch)),
     [uniqueOrders, adminOrdersSearch]
@@ -2580,6 +2587,7 @@ export default function App() {
 
   useEffect(() => {
     setZoomedMedia(null);
+    setSizeChartOpen(false);
   }, [selectedProductId, activePage]);
 
   useEffect(() => {
@@ -3222,6 +3230,12 @@ export default function App() {
     }
   };
 
+  const handleProductMediaTouchEnd = () => {
+    window.setTimeout(() => {
+      productMediaTouchRef.current = null;
+    }, 0);
+  };
+
   const openZoomedProductMedia = (event, panel) => {
     if (productMediaTouchRef.current?.moved) {
       event.preventDefault();
@@ -3706,6 +3720,7 @@ export default function App() {
     ...emptyProductForm,
     category: managedTshirtCategories[0] || DEFAULT_TSHIRT_CATEGORIES[0],
     mediaImages: [],
+    sizeChartImage: "",
     videoData: "",
     imageData: ""
   });
@@ -3795,6 +3810,15 @@ export default function App() {
     setToast(nextVideo ? "Product video updated." : "Product video removed.");
   };
 
+  const setProductSizeChartImage = (nextImage) => {
+    setProductForm((prev) => ({
+      ...prev,
+      sizeChartImage: nextImage || ""
+    }));
+
+    setToast(nextImage ? "Size chart image updated." : "Size chart image removed.");
+  };
+
   const addTshirtCategory = () => {
     const nextCategory = normalizeCategoryName(categoryDraft);
 
@@ -3881,6 +3905,7 @@ export default function App() {
       badge: product.badge || "",
       imageData: getProductImages(product)[0] || "",
       mediaImages: getProductImages(product),
+      sizeChartImage: getProductSizeChartImage(product),
       videoData: getProductVideo(product)
     });
     setAdminTab("products");
@@ -3913,6 +3938,7 @@ export default function App() {
       sizes: productForm.sizes,
       badge: productForm.badge.trim(),
       mediaImages: getProductImages(productForm),
+      sizeChartImage: getProductSizeChartImage(productForm),
       videoData: getProductVideo(productForm),
       imageData: getProductImages(productForm)[0] || "",
       createdAt: productForm.id
@@ -4486,13 +4512,20 @@ export default function App() {
   const renderPolicyPage = (title, content) => (
     <div style={shellStyle}>
       {renderBackButton()}
-      <div style={{ ...cardStyle, maxWidth: "980px" }}>
-        <h2 style={{ marginTop: 0 }}>{title}</h2>
+      <div
+        style={{
+          ...cardStyle,
+          maxWidth: "980px",
+          borderRadius: 0,
+          background: "#050505"
+        }}
+      >
+        <h2 style={{ marginTop: 0, color: "#ffffff" }}>{title}</h2>
         <div
           style={{
             whiteSpace: "pre-line",
             lineHeight: 1.9,
-            color: tone.body
+            color: "#ffffff"
           }}
         >
           {content}
@@ -4504,14 +4537,21 @@ export default function App() {
   const renderMorePage = () => (
     <div style={shellStyle}>
       {renderBackButton()}
-      <div style={{ ...cardStyle, maxWidth: "980px" }}>
-        <h2 style={{ marginTop: 0 }}>More</h2>
+      <div
+        style={{
+          ...cardStyle,
+          maxWidth: "980px",
+          borderRadius: 0,
+          background: "#050505"
+        }}
+      >
+        <h2 style={{ marginTop: 0, color: "#ffffff" }}>More</h2>
         <div
           style={{
             display: "grid",
             gap: "24px",
             lineHeight: 1.9,
-            color: tone.body
+            color: "#ffffff"
           }}
         >
           <div
@@ -4523,7 +4563,7 @@ export default function App() {
             }}
           >
             <strong>Contact Us</strong>
-            <a href={`mailto:${storeContactEmail}`} style={{ color: tone.body }}>
+            <a href={`mailto:${storeContactEmail}`} style={{ color: "#ffffff" }}>
               {storeContactEmail}
             </a>
           </div>
@@ -5015,6 +5055,7 @@ export default function App() {
 
     const finalPrice = discountPrice(selectedProduct);
     const mediaItems = getProductMediaItems(selectedProduct);
+    const selectedProductSizeChartImage = getProductSizeChartImage(selectedProduct);
     const selectedQuantity = Math.max(1, Number(productConfig.quantity) || 1);
     const productAvailability = normalizeProductAvailability(
       selectedProduct.availability,
@@ -5084,6 +5125,37 @@ export default function App() {
                 )}
               </div>
 
+              {selectedProductSizeChartImage ? (
+                <div className="product-size-chart">
+                  <button
+                    type="button"
+                    className="product-side__text-button product-size-chart__button"
+                    onClick={() => setSizeChartOpen((prev) => !prev)}
+                    aria-expanded={sizeChartOpen}
+                  >
+                    Size Chart
+                  </button>
+                  <div
+                    className={`product-size-chart__panel${
+                      sizeChartOpen ? " product-size-chart__panel--open" : ""
+                    }`}
+                    aria-hidden={!sizeChartOpen}
+                  >
+                    <div
+                      className="product-size-chart__image-shell"
+                      onContextMenu={(event) => event.preventDefault()}
+                    >
+                      <img
+                        src={selectedProductSizeChartImage}
+                        alt={`${selectedProduct.name} size chart`}
+                        className="product-size-chart__image"
+                        draggable="false"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               <section className="product-side__section">
                 <p className="product-side__label">Sizes</p>
                 <div className="detail-chip-row product-option-row">
@@ -5149,6 +5221,8 @@ export default function App() {
                       className="product-media-button"
                       onTouchStart={handleProductMediaTouchStart}
                       onTouchMove={handleProductMediaTouchMove}
+                      onTouchEnd={handleProductMediaTouchEnd}
+                      onTouchCancel={handleProductMediaTouchEnd}
                       onClick={(event) => openZoomedProductMedia(event, panel)}
                     >
                       <img
@@ -6650,9 +6724,31 @@ export default function App() {
                               padding: "10px",
                               background: tone.white,
                               display: "grid",
+                              position: "relative",
                               gap: "10px"
                             }}
                           >
+                            <span
+                              aria-label={`Product image ${index + 1}`}
+                              style={{
+                                position: "absolute",
+                                top: "8px",
+                                left: "8px",
+                                width: "28px",
+                                height: "28px",
+                                borderRadius: "999px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                background: tone.black,
+                                color: tone.white,
+                                fontSize: "12px",
+                                fontWeight: 700,
+                                zIndex: 1
+                              }}
+                            >
+                              {index + 1}
+                            </span>
                             <div
                               style={{
                                 width: "100%",
@@ -6729,6 +6825,72 @@ export default function App() {
                           >
                             No images uploaded yet.
                           </div>
+                        )}
+                      </div>
+
+                      <label style={{ display: "grid", gap: "8px", color: tone.muted }}>
+                        Upload Size Chart Image
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(event) =>
+                            handleImageUpload(
+                              event,
+                              (upload) => setProductSizeChartImage(upload),
+                              {
+                                successMessage: "Size chart image uploaded.",
+                                failureMessage: "Size chart image upload failed."
+                              }
+                            )
+                          }
+                        />
+                      </label>
+
+                      <div
+                        style={{
+                          border: `1px solid ${tone.line}`,
+                          borderRadius: "16px",
+                          padding: "12px",
+                          background: tone.white,
+                          display: "grid",
+                          gap: "10px"
+                        }}
+                      >
+                        <p style={{ margin: 0, color: tone.muted, fontSize: "12px" }}>
+                          Size Chart Image
+                        </p>
+                        {productFormSizeChartImage ? (
+                          <>
+                            <div
+                              style={{
+                                width: "100%",
+                                minHeight: "120px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                background: "transparent"
+                              }}
+                            >
+                              <img
+                                src={productFormSizeChartImage}
+                                alt="Size chart"
+                                style={{
+                                  width: "auto",
+                                  height: "auto",
+                                  maxWidth: "100%",
+                                  maxHeight: "220px",
+                                  display: "block"
+                                }}
+                              />
+                            </div>
+                            <button onClick={() => setProductSizeChartImage("")} style={secondaryButtonStyle}>
+                              Delete Size Chart
+                            </button>
+                          </>
+                        ) : (
+                          <p style={{ margin: 0, color: tone.muted }}>
+                            No size chart uploaded.
+                          </p>
                         )}
                       </div>
 
@@ -8982,6 +9144,18 @@ export default function App() {
                   {item.label}
                 </button>
               ))}
+            </div>
+
+            <div
+              style={{
+                width: "100%",
+                textAlign: "center",
+                fontSize: "12px",
+                fontWeight: 500,
+                opacity: 0.9
+              }}
+            >
+              © 2026 VATSAURA
             </div>
           </div>
         </footer>
