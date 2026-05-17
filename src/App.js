@@ -1766,6 +1766,22 @@ const ArrowRightIcon = ({ width = 18, height = 18 } = {}) => (
   </svg>
 );
 
+const ChevronDownIcon = ({ width = 14, height = 14, open = false } = {}) => (
+  <svg
+    width={width}
+    height={height}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 180ms ease" }}
+  >
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+);
+
 const HOME_HIGHLIGHT_ICON_OPTIONS = [
   { value: "quality", label: "Quality Seal" },
   { value: "fabric", label: "Leaf Fabric" },
@@ -1866,6 +1882,7 @@ export default function App() {
   const [showTshirtMenu, setShowTshirtMenu] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState("all");
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [catalogEditionsOpen, setCatalogEditionsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("featured");
   const [selectedProductId, setSelectedProductId] = useState("");
@@ -1958,6 +1975,7 @@ export default function App() {
   const legacyUsersRef = useRef([]);
   const drawerRef = useRef(null);
   const tshirtRef = useRef(null);
+  const catalogFilterRef = useRef(null);
   const searchRef = useRef(null);
   const searchInputRef = useRef(null);
   const productMediaTouchRef = useRef(null);
@@ -2751,6 +2769,10 @@ export default function App() {
       if (searchRef.current && !searchRef.current.contains(event.target)) {
         setSearchSuggestionsOpen(false);
       }
+
+      if (catalogFilterRef.current && !catalogFilterRef.current.contains(event.target)) {
+        setCatalogEditionsOpen(false);
+      }
     };
 
     document.addEventListener("mousedown", handleOutsideClick);
@@ -3275,6 +3297,7 @@ export default function App() {
     setSelectedCategory(category);
     setActivePage("home");
     setShowTshirtMenu(false);
+    setCatalogEditionsOpen(false);
     setMenuOpen(false);
     setSearchSuggestionsOpen(false);
   };
@@ -5142,64 +5165,149 @@ export default function App() {
     );
   };
 
-  const renderCatalogSection = (title, sectionProducts, departmentKey, menuItems) => (
-    <section className="catalog-section js-reveal" style={{ marginTop: "32px" }}>
-      <div
-        className="section-heading"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "12px",
-          marginBottom: "16px"
-        }}
-      >
-        <div>
-          <h2 style={{ margin: "0 0 6px" }}>{title}</h2>
-          <p style={{ margin: 0, color: tone.muted }}>
-            {hasActiveSearch
-              ? `Showing ${sectionProducts.length} result${sectionProducts.length === 1 ? "" : "s"} for "${searchTerm.trim()}".`
-              : "Explore the full premium tees catalog."}
-          </p>
-        </div>
-        {!hasActiveSearch && menuItems.length > 0 && (
-          <div className="filter-pill-row" style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-            {menuItems.map((item) => (
-              <button
-                key={item.value}
-                onClick={() => openDepartment(departmentKey, item.value)}
-                className="filter-pill"
-                style={{
-                  ...secondaryButtonStyle,
-                  background:
-                    selectedDepartment === departmentKey && selectedCategory === item.value
-                      ? tone.black
-                      : tone.white,
-                  color:
-                    selectedDepartment === departmentKey && selectedCategory === item.value
-                      ? tone.white
-                      : tone.body
-                }}
+  const renderCatalogSection = (title, sectionProducts, departmentKey, menuItems) => {
+    const isShopAllDropsFilter = !hasActiveSearch && title === "Shop All Drops" && menuItems.length > 0;
+    const editionMenuItems = menuItems.filter((item) => item.value !== "all");
+    const activeEdition = editionMenuItems.find((item) => item.value === selectedCategory) || null;
+
+    return (
+      <section className="catalog-section js-reveal" style={{ marginTop: "32px" }}>
+        <div
+          className="section-heading"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "12px",
+            marginBottom: "16px"
+          }}
+        >
+          <div>
+            <h2 style={{ margin: "0 0 6px" }}>{title}</h2>
+            <p style={{ margin: 0, color: tone.muted }}>
+              {hasActiveSearch
+                ? `Showing ${sectionProducts.length} result${sectionProducts.length === 1 ? "" : "s"} for "${searchTerm.trim()}".`
+                : "Explore the full premium tees catalog."}
+            </p>
+          </div>
+          {!hasActiveSearch && menuItems.length > 0 && (
+            isShopAllDropsFilter ? (
+              <div
+                className="filter-pill-row catalog-filter-menu"
+                ref={catalogFilterRef}
+                style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "flex-start" }}
               >
-                {item.label}
-              </button>
-            ))}
+                <button
+                  onClick={() => openDepartment(departmentKey, "all")}
+                  className="filter-pill catalog-filter-menu__button"
+                  style={{
+                    ...secondaryButtonStyle,
+                    background:
+                      selectedDepartment === departmentKey && selectedCategory === "all"
+                        ? tone.black
+                        : tone.white,
+                    color:
+                      selectedDepartment === departmentKey && selectedCategory === "all"
+                        ? tone.white
+                        : tone.body
+                  }}
+                >
+                  All Collections
+                </button>
+
+                <div className="catalog-filter-menu__dropdown">
+                  <button
+                    type="button"
+                    onClick={() => setCatalogEditionsOpen((prev) => !prev)}
+                    className={`filter-pill catalog-filter-menu__button${
+                      selectedDepartment === departmentKey && selectedCategory !== "all"
+                        ? " catalog-filter-menu__button--active"
+                        : ""
+                    }`}
+                    style={{
+                      ...secondaryButtonStyle,
+                      background:
+                        selectedDepartment === departmentKey && selectedCategory !== "all"
+                          ? tone.black
+                          : tone.white,
+                      color:
+                        selectedDepartment === departmentKey && selectedCategory !== "all"
+                          ? tone.white
+                          : tone.body,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px"
+                    }}
+                    aria-expanded={catalogEditionsOpen}
+                  >
+                    <span>{activeEdition ? activeEdition.label : "Editions"}</span>
+                    <ChevronDownIcon open={catalogEditionsOpen} />
+                  </button>
+
+                  <div
+                    className={`catalog-filter-menu__panel${
+                      catalogEditionsOpen ? " catalog-filter-menu__panel--open" : ""
+                    }`}
+                  >
+                    <div className="catalog-filter-menu__panel-inner">
+                      {editionMenuItems.map((item) => (
+                        <button
+                          key={item.value}
+                          type="button"
+                          onClick={() => openDepartment(departmentKey, item.value)}
+                          className={`catalog-filter-menu__item${
+                            selectedDepartment === departmentKey && selectedCategory === item.value
+                              ? " catalog-filter-menu__item--active"
+                              : ""
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="filter-pill-row" style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                {menuItems.map((item) => (
+                  <button
+                    key={item.value}
+                    onClick={() => openDepartment(departmentKey, item.value)}
+                    className="filter-pill"
+                    style={{
+                      ...secondaryButtonStyle,
+                      background:
+                        selectedDepartment === departmentKey && selectedCategory === item.value
+                          ? tone.black
+                          : tone.white,
+                      color:
+                        selectedDepartment === departmentKey && selectedCategory === item.value
+                          ? tone.white
+                          : tone.body
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+
+        {sectionProducts.length === 0 ? (
+          <div className="empty-state-card" style={{ ...cardStyle, color: tone.muted }}>
+            No products found for this selection.
+          </div>
+        ) : (
+          <div className="catalog-grid">
+            {sectionProducts.map((product) => renderProductCard(product))}
           </div>
         )}
-      </div>
-
-      {sectionProducts.length === 0 ? (
-        <div className="empty-state-card" style={{ ...cardStyle, color: tone.muted }}>
-          No products found for this selection.
-        </div>
-      ) : (
-        <div className="catalog-grid">
-          {sectionProducts.map((product) => renderProductCard(product))}
-        </div>
-      )}
-    </section>
-  );
+      </section>
+    );
+  };
 
   const renderHome = () => (
     <>
@@ -6659,10 +6767,10 @@ export default function App() {
   );
 
   const renderAdminSecurityGate = () => (
-    <div style={shellStyle}>
+    <div style={shellStyle} className="admin-experience admin-experience--gate">
       {renderBackButton()}
       <div style={{ maxWidth: "760px" }}>
-        <div style={cardStyle}>
+        <div style={cardStyle} className="admin-panel-card admin-auth-card">
           <h2 style={{ marginTop: 0 }}>Admin Security</h2>
           <p style={{ color: tone.muted, lineHeight: 1.8 }}>
             Admin access requires Google sign-in with an authorized email, then the admin password (verified on this device).
@@ -6766,21 +6874,24 @@ export default function App() {
     }
 
     return (
-      <div style={shellStyle}>
+      <div style={shellStyle} className="admin-experience">
         {renderBackButton()}
         <div
           className="admin-shell-grid"
         >
-          <aside className="admin-panel-card" style={cardStyle}>
+          <aside className="admin-panel-card admin-sidebar" style={cardStyle}>
             <h2 style={{ marginTop: 0 }}>Admin Panel</h2>
             <p style={{ marginTop: 0, color: tone.muted }}>
               Protected by Google login and a shared admin password verified in the browser.
             </p>
-            <div style={{ display: "grid", gap: "10px" }}>
+            <div className="admin-sidebar__nav" style={{ display: "grid", gap: "10px" }}>
               {adminTabs.map((tab) => (
                 <button
                   key={tab.key}
                   onClick={() => setAdminTab(tab.key)}
+                  className={`admin-sidebar__button${
+                    adminTab === tab.key ? " admin-sidebar__button--active" : ""
+                  }`}
                   style={{
                     ...secondaryButtonStyle,
                     textAlign: "left",
@@ -6791,18 +6902,19 @@ export default function App() {
                   {tab.label}
                 </button>
               ))}
-              <button onClick={endAdminSession} style={secondaryButtonStyle}>
+              <button onClick={endAdminSession} style={secondaryButtonStyle} className="admin-sidebar__button">
                 Lock Admin
               </button>
             </div>
           </aside>
 
-          <section className="admin-panel-card" style={cardStyle}>
+          <section className="admin-panel-card admin-main-panel" style={cardStyle}>
             {adminTab === "dashboard" && (
               <>
                 <h2 style={{ marginTop: 0 }}>Dashboard</h2>
-                <div style={{ display: "grid", gap: "18px" }}>
+                <div className="admin-dashboard-stack" style={{ display: "grid", gap: "18px" }}>
                   <div
+                    className="admin-dashboard-grid"
                     style={{
                       display: "grid",
                       gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
@@ -6819,6 +6931,7 @@ export default function App() {
                     ].map((stat) => (
                       <div
                         key={stat.label}
+                        className="admin-stat-card"
                         style={{
                           border: `1px solid ${tone.line}`,
                           borderRadius: "18px",
@@ -6833,6 +6946,7 @@ export default function App() {
                   </div>
 
                   <div
+                    className="admin-analytics-shell"
                     style={{
                       border: `1px solid ${tone.line}`,
                       borderRadius: "18px",
@@ -6850,6 +6964,7 @@ export default function App() {
                     </div>
 
                     <div
+                      className="admin-dashboard-grid"
                       style={{
                         display: "grid",
                         gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
@@ -6863,6 +6978,7 @@ export default function App() {
                       ].map((stat) => (
                         <div
                           key={stat.label}
+                          className="admin-stat-card admin-stat-card--soft"
                           style={{
                             border: `1px solid ${tone.line}`,
                             borderRadius: "18px",
@@ -6877,6 +6993,7 @@ export default function App() {
                     </div>
 
                     <div
+                      className="admin-analytics-grid"
                       style={{
                         display: "grid",
                         gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
@@ -6884,6 +7001,7 @@ export default function App() {
                       }}
                     >
                       <div
+                        className="admin-chart-card"
                         style={{
                           border: `1px solid ${tone.line}`,
                           borderRadius: "18px",
@@ -6910,6 +7028,7 @@ export default function App() {
                             {visitorTrend.map((entry) => (
                               <div
                                 key={entry.dateKey}
+                                className="admin-chart-bar-group"
                                 style={{
                                   display: "grid",
                                   gap: "10px",
@@ -6919,6 +7038,7 @@ export default function App() {
                               >
                                 <strong style={{ fontSize: "13px" }}>{entry.count}</strong>
                                 <div
+                                  className="admin-chart-bar"
                                   style={{
                                     width: "100%",
                                     maxWidth: "44px",
@@ -6942,6 +7062,7 @@ export default function App() {
                       </div>
 
                       <div
+                        className="admin-live-card"
                         style={{
                           border: `1px solid ${tone.line}`,
                           borderRadius: "18px",
@@ -6960,6 +7081,7 @@ export default function App() {
                           recentVisitorActivity.map((entry) => (
                             <div
                               key={entry.id}
+                              className="admin-live-item"
                               style={{
                                 border: `1px solid ${tone.line}`,
                                 borderRadius: "14px",
@@ -9571,6 +9693,7 @@ export default function App() {
           }}
         >
           <div
+            className="site-footer__inner"
             style={{
               ...shellStyle,
               maxWidth: "600px",
@@ -9612,7 +9735,7 @@ export default function App() {
               }}
             />
 
-            <div style={{ 
+            <div className="site-footer__security" style={{ 
               display: "flex", 
               alignItems: "center", 
               justifyContent: "center", 
@@ -9621,10 +9744,10 @@ export default function App() {
               opacity: 0.9
             }}>
               <LockIcon width={14} height={14} strokeWidth={2.5} />
-              <span style={{ fontSize: "12px", fontWeight: 600, letterSpacing: "1px", textTransform: "uppercase" }}>100% Secure Payments</span>
+              <span className="site-footer__security-text" style={{ fontSize: "12px", fontWeight: 600, letterSpacing: "1px", textTransform: "uppercase" }}>100% Secure Payments</span>
             </div>
 
-            <div style={{ 
+            <div className="site-footer__links" style={{ 
               display: "flex", 
               justifyContent: "center", 
               gap: "24px", 
@@ -9640,6 +9763,7 @@ export default function App() {
                 <button
                   key={item.page}
                   onClick={() => navigateTo(item.page)}
+                  className="site-footer__link"
                   style={{
                     background: "transparent",
                     border: "none",
@@ -9662,12 +9786,12 @@ export default function App() {
               style={{
                 width: "100%",
                 textAlign: "center",
-                fontSize: "12px",
-                fontWeight: 500,
+                fontSize: "11px",
+                fontWeight: 400,
                 opacity: 0.9
               }}
             >
-              © 2026 VATSAURA
+              {"\u00A9"} 2026 VATSAURA
             </div>
           </div>
         </footer>
