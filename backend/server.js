@@ -732,7 +732,220 @@ const formatSmtpFailureHint = (err) => {
   return "Verify SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, and SMTP_FROM in the server .env file, restart the backend, and try again.";
 };
 
-const sendEmailViaSmtp = async (subject, text, toEmail = config.ownerEmail) => {
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const formatCurrencyInr = (value) =>
+  `INR ${Number(value || 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`;
+
+const paymentMethodLabels = {
+  upi: "UPI QR",
+  razorpay: "Razorpay",
+  cod: "Cash on Delivery",
+  aura: "Aura Points"
+};
+
+const getInvoiceCustomerName = (order) =>
+  String(
+    order?.customer?.name ||
+      order?.customer?.customerName ||
+      order?.userEmail ||
+      "Customer"
+  ).trim();
+
+const getInvoiceItemsTotal = (order) =>
+  (Array.isArray(order?.items) ? order.items : []).reduce((total, item) => {
+    const quantity = Math.max(1, Number(item?.quantity || 1));
+    const unitPrice = Number(item?.unitPrice || 0);
+    return total + quantity * unitPrice;
+  }, 0);
+
+const getInvoiceAmountPaid = (order) => {
+  const itemsTotal = getInvoiceItemsTotal(order);
+  const codCharge = Number(order?.codCharge || 0);
+  const auraUsed = Number(order?.auraPointsUsed || 0);
+  const remainingPayable = Number(order?.remainingPayable ?? order?.total ?? 0);
+  const paymentMethod = String(order?.paymentMethod || "").trim().toLowerCase();
+
+  if (paymentMethod === "cod") {
+    return Number(order?.total || itemsTotal + codCharge);
+  }
+
+  if (paymentMethod === "aura") {
+    return Number(order?.total || itemsTotal + codCharge);
+  }
+
+  if (remainingPayable > 0) {
+    return remainingPayable;
+  }
+
+  if (auraUsed > 0) {
+    return Math.max(0, Number(order?.total || itemsTotal + codCharge) - auraUsed);
+  }
+
+  return Number(order?.total || itemsTotal + codCharge);
+};
+
+const buildInvoiceEmailText = (order) => {
+  const customerName = getInvoiceCustomerName(order);
+  const createdAtLabel = new Date(Number(order?.createdAt) || Date.now()).toLocaleString("en-IN");
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const itemsTotal = getInvoiceItemsTotal(order);
+  const codCharge = Number(order?.codCharge || 0);
+  const auraUsed = Number(order?.auraPointsUsed || 0);
+  const orderTotal = Number(order?.total || itemsTotal + codCharge);
+  const amountPaid = getInvoiceAmountPaid(order);
+  const paymentMethodLabel =
+    paymentMethodLabels[String(order?.paymentMethod || "").trim().toLowerCase()] ||
+    String(order?.paymentMethod || "-").toUpperCase();
+  const itemLines = items.map((item, index) => {
+    const quantity = Math.max(1, Number(item?.quantity || 1));
+    const unitPrice = Number(item?.unitPrice || 0);
+    const lineTotal = quantity * unitPrice;
+    const attributes = [
+      item?.size ? `Size: ${item.size}` : "",
+      item?.color ? `Color: ${item.color}` : ""
+    ].filter(Boolean);
+
+    return `${index + 1}. ${String(item?.name || "Product").trim()} x ${quantity} - ${formatCurrencyInr(lineTotal)}${attributes.length ? ` (${attributes.join(", ")})` : ""}`;
+  });
+
+  return [
+    `Hello ${customerName},`,
+    "",
+    `Thank you for shopping with ${config.appName}. Your payment was successful and your invoice is below.`,
+    "",
+    `Order ID: ${order?.id || "-"}`,
+    `Order Date: ${createdAtLabel}`,
+    `Payment Method: ${paymentMethodLabel}`,
+    `Payment Status: ${order?.status || "-"}`,
+    "",
+    "Items:",
+    ...(itemLines.length ? itemLines : ["No items found."]),
+    "",
+    `Items Total: ${formatCurrencyInr(itemsTotal)}`,
+    ...(codCharge > 0 ? [`COD Charge: ${formatCurrencyInr(codCharge)}`] : []),
+    ...(auraUsed > 0 ? [`Aura Points Used: -${formatCurrencyInr(auraUsed)}`] : []),
+    `Amount Paid: ${formatCurrencyInr(amountPaid)}`,
+    `Order Total: ${formatCurrencyInr(orderTotal)}`,
+    "",
+    "Billing / Delivery Details:",
+    `Name: ${customerName}`,
+    `Email: ${order?.customer?.email || order?.userEmail || "-"}`,
+    `Phone: ${order?.customer?.phone || order?.userPhone || "-"}`,
+    `Address: ${[order?.customer?.address, order?.customer?.landmark, order?.customer?.city, order?.customer?.pincode].filter(Boolean).join(", ") || "-"}`,
+    ...(String(order?.paymentMethod || "").trim().toLowerCase() === "upi" && order?.customer?.customerName
+      ? [`UPI Customer Name: ${order.customer.customerName}`]
+      : []),
+    ...(String(order?.paymentMethod || "").trim().toLowerCase() === "upi" && order?.customer?.transactionId
+      ? [`Transaction ID / UTR: ${order.customer.transactionId}`]
+      : []),
+    "",
+    "This is an automated invoice email from VATSAURA.",
+    `For help, reply to ${config.smtp.from || "vatsaurateam@gmail.com"}.`
+  ].join("\n");
+};
+
+const buildInvoiceEmailHtml = (order) => {
+  const customerName = getInvoiceCustomerName(order);
+  const createdAtLabel = new Date(Number(order?.createdAt) || Date.now()).toLocaleString("en-IN");
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const address = [order?.customer?.address, order?.customer?.landmark, order?.customer?.city, order?.customer?.pincode]
+    .filter(Boolean)
+    .join(", ");
+  const itemsTotal = getInvoiceItemsTotal(order);
+  const codCharge = Number(order?.codCharge || 0);
+  const auraUsed = Number(order?.auraPointsUsed || 0);
+  const orderTotal = Number(order?.total || itemsTotal + codCharge);
+  const amountPaid = getInvoiceAmountPaid(order);
+  const paymentMethodLabel =
+    paymentMethodLabels[String(order?.paymentMethod || "").trim().toLowerCase()] ||
+    String(order?.paymentMethod || "-").toUpperCase();
+
+  const itemRows = items
+    .map((item, index) => {
+      const quantity = Math.max(1, Number(item?.quantity || 1));
+      const unitPrice = Number(item?.unitPrice || 0);
+      const lineTotal = quantity * unitPrice;
+      const details = [item?.size ? `Size: ${item.size}` : "", item?.color ? `Color: ${item.color}` : ""]
+        .filter(Boolean)
+        .join(" | ");
+
+      return `
+        <tr>
+          <td style="padding:10px 12px;border-bottom:1px solid #e8e8e8;font-size:14px;color:#111111;">${index + 1}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e8e8e8;font-size:14px;color:#111111;">
+            <div style="font-weight:600;">${escapeHtml(item?.name || "Product")}</div>
+            ${details ? `<div style="font-size:12px;color:#666666;margin-top:4px;">${escapeHtml(details)}</div>` : ""}
+          </td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e8e8e8;font-size:14px;color:#111111;text-align:center;">${quantity}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e8e8e8;font-size:14px;color:#111111;text-align:right;">${escapeHtml(formatCurrencyInr(lineTotal))}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  return `
+    <div style="margin:0;padding:24px;background:#f5f5f5;font-family:Arial,sans-serif;color:#111111;">
+      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #e8e8e8;border-radius:18px;overflow:hidden;">
+        <div style="padding:24px 28px;background:#050505;color:#ffffff;">
+          <div style="font-size:24px;font-weight:700;letter-spacing:0.04em;">VATSAURA</div>
+          <div style="margin-top:8px;font-size:14px;color:#d8d8d8;">Invoice for your successful order payment</div>
+        </div>
+        <div style="padding:28px;">
+          <p style="margin:0 0 18px;font-size:15px;line-height:1.6;">Hello ${escapeHtml(customerName)},<br/>Thank you for shopping with ${escapeHtml(config.appName)}. Here is your order invoice.</p>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:24px;">
+            <div style="padding:14px 16px;border:1px solid #e8e8e8;border-radius:14px;background:#fafafa;"><div style="font-size:12px;color:#666666;">Order ID</div><div style="margin-top:6px;font-size:14px;font-weight:600;">${escapeHtml(order?.id || "-")}</div></div>
+            <div style="padding:14px 16px;border:1px solid #e8e8e8;border-radius:14px;background:#fafafa;"><div style="font-size:12px;color:#666666;">Order Date</div><div style="margin-top:6px;font-size:14px;font-weight:600;">${escapeHtml(createdAtLabel)}</div></div>
+            <div style="padding:14px 16px;border:1px solid #e8e8e8;border-radius:14px;background:#fafafa;"><div style="font-size:12px;color:#666666;">Payment Method</div><div style="margin-top:6px;font-size:14px;font-weight:600;">${escapeHtml(paymentMethodLabel)}</div></div>
+            <div style="padding:14px 16px;border:1px solid #e8e8e8;border-radius:14px;background:#fafafa;"><div style="font-size:12px;color:#666666;">Payment Status</div><div style="margin-top:6px;font-size:14px;font-weight:600;">${escapeHtml(order?.status || "-")}</div></div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;border:1px solid #e8e8e8;border-radius:16px;overflow:hidden;">
+            <thead>
+              <tr style="background:#fafafa;">
+                <th style="padding:12px;text-align:left;font-size:12px;color:#666666;">#</th>
+                <th style="padding:12px;text-align:left;font-size:12px;color:#666666;">Item</th>
+                <th style="padding:12px;text-align:center;font-size:12px;color:#666666;">Qty</th>
+                <th style="padding:12px;text-align:right;font-size:12px;color:#666666;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemRows || '<tr><td colspan="4" style="padding:16px;font-size:14px;color:#666666;">No items found.</td></tr>'}
+            </tbody>
+          </table>
+          <div style="margin-top:24px;padding:18px;border:1px solid #e8e8e8;border-radius:16px;background:#fafafa;">
+            <div style="display:flex;justify-content:space-between;gap:16px;font-size:14px;margin-bottom:10px;"><span>Items Total</span><strong>${escapeHtml(formatCurrencyInr(itemsTotal))}</strong></div>
+            ${codCharge > 0 ? `<div style="display:flex;justify-content:space-between;gap:16px;font-size:14px;margin-bottom:10px;"><span>COD Charge</span><strong>${escapeHtml(formatCurrencyInr(codCharge))}</strong></div>` : ""}
+            ${auraUsed > 0 ? `<div style="display:flex;justify-content:space-between;gap:16px;font-size:14px;margin-bottom:10px;color:#2e7d32;"><span>Aura Points Used</span><strong>-${escapeHtml(formatCurrencyInr(auraUsed))}</strong></div>` : ""}
+            <div style="display:flex;justify-content:space-between;gap:16px;font-size:14px;margin-bottom:10px;"><span>Amount Paid</span><strong>${escapeHtml(formatCurrencyInr(amountPaid))}</strong></div>
+            <div style="display:flex;justify-content:space-between;gap:16px;font-size:15px;font-weight:700;padding-top:10px;border-top:1px solid #e8e8e8;"><span>Order Total</span><span>${escapeHtml(formatCurrencyInr(orderTotal))}</span></div>
+          </div>
+          <div style="margin-top:24px;padding:18px;border:1px solid #e8e8e8;border-radius:16px;">
+            <div style="font-size:13px;color:#666666;margin-bottom:10px;">Billing / Delivery Details</div>
+            <div style="font-size:14px;line-height:1.7;">
+              <div><strong>Name:</strong> ${escapeHtml(customerName)}</div>
+              <div><strong>Email:</strong> ${escapeHtml(order?.customer?.email || order?.userEmail || "-")}</div>
+              <div><strong>Phone:</strong> ${escapeHtml(order?.customer?.phone || order?.userPhone || "-")}</div>
+              <div><strong>Address:</strong> ${escapeHtml(address || "-")}</div>
+              ${String(order?.paymentMethod || "").trim().toLowerCase() === "upi" && order?.customer?.customerName ? `<div><strong>UPI Customer Name:</strong> ${escapeHtml(order.customer.customerName)}</div>` : ""}
+              ${String(order?.paymentMethod || "").trim().toLowerCase() === "upi" && order?.customer?.transactionId ? `<div><strong>Transaction ID / UTR:</strong> ${escapeHtml(order.customer.transactionId)}</div>` : ""}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+const sendEmailViaSmtp = async (subject, text, toEmail = config.ownerEmail, options = {}) => {
   const raw = config.smtp;
   let host = String(raw.host || "").trim();
   const port = Number(raw.port || 587);
@@ -789,7 +1002,8 @@ const sendEmailViaSmtp = async (subject, text, toEmail = config.ownerEmail) => {
       to: toEmail,
       replyTo: user || undefined,
       subject,
-      text
+      text,
+      ...(options.html ? { html: options.html } : {})
     });
 
     return { success: true };
@@ -847,6 +1061,46 @@ const deliverOtp = async (method, otp, toEmail = config.ownerEmail) => {
 
   throw new Error("Unsupported OTP method.");
 };
+
+app.post("/api/payment/send-invoice", async (req, res) => {
+  try {
+    const order = req.body?.order;
+    const customerEmail = normalizeEmail(order?.customer?.email || order?.userEmail);
+
+    if (!customerEmail) {
+      res.status(400).json({ error: "Customer email is required." });
+      return;
+    }
+
+    if (String(order?.status || "").trim().toLowerCase() !== "paid") {
+      res.status(400).json({ error: "Invoice emails are sent only for paid orders." });
+      return;
+    }
+
+    if (!order?.id || !Array.isArray(order?.items) || order.items.length === 0) {
+      res.status(400).json({ error: "A valid order payload is required." });
+      return;
+    }
+
+    const subject = `VATSAURA Invoice - Order ${order.id}`;
+    const text = buildInvoiceEmailText(order);
+    const html = buildInvoiceEmailHtml(order);
+    const smtpResult = await sendEmailViaSmtp(subject, text, customerEmail, { html });
+
+    if (!smtpResult.success) {
+      res.status(500).json({
+        error: "Unable to send invoice email.",
+        hint: smtpResult.hint || smtpResult.error || "SMTP delivery failed."
+      });
+      return;
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Invoice email error:", error);
+    res.status(500).json({ error: "Unable to send invoice email." });
+  }
+});
 
 const createSession = (email = config.ownerEmail) => {
   const token = createId("admin-session");

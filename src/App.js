@@ -3719,6 +3719,38 @@ export default function App() {
     navigateTo("payment");
   };
 
+  const sendInvoiceEmail = async (order) => {
+    const customerEmail = normalizeEmail(order?.customer?.email || order?.userEmail);
+
+    if (!customerEmail || String(order?.status || "").trim().toLowerCase() !== "paid") {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+
+    let response;
+
+    try {
+      response = await fetch(buildApiUrl("/api/payment/send-invoice"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ order }),
+        keepalive: true,
+        signal: controller.signal
+      });
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || payload.hint || "Unable to send invoice email.");
+    }
+  };
+
   const placeOrder = () => {
     if (cart.length === 0) {
       setToast("Your cart is empty.");
@@ -3883,6 +3915,14 @@ export default function App() {
         nextUserRecord,
         { merge: true }
       );
+
+      if (String(order.status || "").trim().toLowerCase() === "paid") {
+        try {
+          await sendInvoiceEmail(order);
+        } catch (error) {
+          console.error("Invoice email failed:", error);
+        }
+      }
 
       setOrders((prev) => sortOrdersNewestFirst([order, ...prev]));
       setUsers((prev) => {
