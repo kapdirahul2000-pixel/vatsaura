@@ -1884,6 +1884,60 @@ app.post("/api/payment/create-order", async (req, res) => {
   }
 });
 
+app.post("/api/orders/finalize", async (req, res) => {
+  try {
+    const order = req.body?.order;
+    const userRecord = req.body?.userRecord;
+
+    if (!order || typeof order !== "object" || !order.id) {
+      res.status(400).json({ error: "A valid order payload is required." });
+      return;
+    }
+
+    if (!userRecord || typeof userRecord !== "object" || !String(userRecord.email || "").trim()) {
+      res.status(400).json({ error: "A valid user payload is required." });
+      return;
+    }
+
+    initializeFirebaseAdmin();
+    const firestore = firebaseAdmin.firestore();
+    const userDocId = normalizeEmail(userRecord.email);
+
+    await firestore.collection("orders").doc(String(order.id)).set(order);
+    await firestore
+      .collection("users")
+      .doc(userDocId)
+      .set(userRecord, { merge: true });
+
+    let invoice = { attempted: false, sent: false };
+
+    if (String(order.status || "").trim().toLowerCase() === "paid") {
+      invoice.attempted = true;
+      const customerEmail = normalizeEmail(order?.customer?.email || order?.userEmail);
+
+      if (customerEmail) {
+        const subject = `VATSAURA Invoice - Order ${order.id}`;
+        const text = buildInvoiceEmailText(order);
+        const html = buildInvoiceEmailHtml(order);
+        const smtpResult = await sendEmailViaSmtp(subject, text, customerEmail, { html });
+        invoice.sent = smtpResult.success;
+        if (!smtpResult.success) {
+          invoice.error = smtpResult.error || smtpResult.hint || "SMTP delivery failed.";
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      orderId: order.id,
+      invoice
+    });
+  } catch (error) {
+    console.error("Order finalize error:", error);
+    res.status(500).json({ error: "Unable to finalize order." });
+  }
+});
+
 app.post("/api/auth/signup", (req, res) => {
   cleanupMemory();
   const name = String(req.body?.name || "").trim();

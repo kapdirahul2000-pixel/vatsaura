@@ -3751,6 +3751,26 @@ export default function App() {
     }
   };
 
+  const finalizeOrderViaBackend = async (order, userRecord) => {
+    const response = await fetch(buildApiUrl("/api/orders/finalize"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        order,
+        userRecord
+      })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || "Unable to finalize order.");
+    }
+
+    return response.json().catch(() => ({}));
+  };
+
   const placeOrder = () => {
     if (cart.length === 0) {
       setToast("Your cart is empty.");
@@ -3909,18 +3929,29 @@ export default function App() {
     });
 
     try {
-      await setDoc(doc(db, FIRESTORE_PATHS.ordersCollection, order.id), order);
-      await setDoc(
-        doc(db, FIRESTORE_PATHS.usersCollection, buildUserDocId(email)),
-        nextUserRecord,
-        { merge: true }
-      );
+      let savedThroughBackend = false;
 
-      if (String(order.status || "").trim().toLowerCase() === "paid") {
-        try {
-          await sendInvoiceEmail(order);
-        } catch (error) {
-          console.error("Invoice email failed:", error);
+      try {
+        await finalizeOrderViaBackend(order, nextUserRecord);
+        savedThroughBackend = true;
+      } catch (backendError) {
+        console.error("Backend order finalize failed, falling back to client sync:", backendError);
+      }
+
+      if (!savedThroughBackend) {
+        await setDoc(doc(db, FIRESTORE_PATHS.ordersCollection, order.id), order);
+        await setDoc(
+          doc(db, FIRESTORE_PATHS.usersCollection, buildUserDocId(email)),
+          nextUserRecord,
+          { merge: true }
+        );
+
+        if (String(order.status || "").trim().toLowerCase() === "paid") {
+          try {
+            await sendInvoiceEmail(order);
+          } catch (error) {
+            console.error("Invoice email failed:", error);
+          }
         }
       }
 
