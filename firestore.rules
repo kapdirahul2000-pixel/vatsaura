@@ -59,6 +59,70 @@ service cloud.firestore {
         request.resource.data.returnRequest.reason.size() > 0;
     }
 
+    function validVisitorId(value) {
+      return value is string && value.size() > 3 && value.size() <= 80;
+    }
+
+    function validVisitorDateKey(value) {
+      return value is string && value.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function validAnalyticsTimestamp(value) {
+      return value is int && value > 0;
+    }
+
+    function validVisitorProfile(visitorId) {
+      return request.resource.data.id == visitorId &&
+        validVisitorId(request.resource.data.id) &&
+        validAnalyticsTimestamp(request.resource.data.createdAt) &&
+        validAnalyticsTimestamp(request.resource.data.lastSeenAt) &&
+        validVisitorDateKey(request.resource.data.firstVisitDate) &&
+        validVisitorDateKey(request.resource.data.lastVisitDate) &&
+        request.resource.data.userAgent is string &&
+        request.resource.data.userAgent.size() <= 280;
+    }
+
+    function validVisitorDay(dayId) {
+      return request.resource.data.id == dayId &&
+        request.resource.data.visitorId is string &&
+        validVisitorId(request.resource.data.visitorId) &&
+        validVisitorDateKey(request.resource.data.dateKey) &&
+        validAnalyticsTimestamp(request.resource.data.createdAt) &&
+        validAnalyticsTimestamp(request.resource.data.lastSeenAt);
+    }
+
+    function validVisitorSession(sessionId) {
+      return request.resource.data.id == sessionId &&
+        validVisitorId(request.resource.data.id) &&
+        request.resource.data.visitorId is string &&
+        validVisitorId(request.resource.data.visitorId) &&
+        request.resource.data.page is string &&
+        request.resource.data.page.size() > 0 &&
+        request.resource.data.page.size() <= 80 &&
+        validAnalyticsTimestamp(request.resource.data.startedAt) &&
+        validAnalyticsTimestamp(request.resource.data.lastSeenAt) &&
+        request.resource.data.userAgent is string &&
+        request.resource.data.userAgent.size() <= 280;
+    }
+
+    match /visitorProfiles/{visitorId} {
+      allow read: if isAdmin();
+      allow create, update: if validVisitorProfile(visitorId);
+      allow delete: if false;
+    }
+
+    match /visitorDays/{dayId} {
+      allow read: if isAdmin();
+      allow create, update: if validVisitorDay(dayId);
+      allow delete: if false;
+    }
+
+    match /visitorSessions/{sessionId} {
+      allow read: if isAdmin();
+      allow create, update: if validVisitorSession(sessionId);
+      allow delete: if false;
+    }
+
     match /appState/primary {
       allow read: if true;
       allow write: if isAdmin();

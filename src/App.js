@@ -40,8 +40,19 @@ const FIRESTORE_PATHS = {
   publicStoreCollection: "appState",
   publicStoreDocument: "primary",
   ordersCollection: "orders",
-  usersCollection: "users"
+  usersCollection: "users",
+  visitorProfilesCollection: "visitorProfiles",
+  visitorDaysCollection: "visitorDays",
+  visitorSessionsCollection: "visitorSessions"
 };
+const ANALYTICS_STORAGE_KEYS = {
+  visitorId: "vatsauraVisitorId",
+  visitorCreatedAt: "vatsauraVisitorCreatedAt",
+  sessionId: "vatsauraVisitorSessionId"
+};
+const VISITOR_HEARTBEAT_MS = 30000;
+const LIVE_VISITOR_WINDOW_MS = 2 * 60 * 1000;
+const LIVE_ACTIVITY_LIMIT = 6;
 
 const CLOUDINARY_CLOUD_NAME = "dcm5dhh8e";
 const CLOUDINARY_UPLOAD_PRESET = "ml_default";
@@ -608,6 +619,27 @@ const writeStorage = (key, value) => {
   }
 };
 
+const readLocalValue = (key, fallback = "") => {
+  try {
+    return window.localStorage.getItem(key) || fallback;
+  } catch (error) {
+    return fallback;
+  }
+};
+
+const writeLocalValue = (key, value) => {
+  try {
+    if (!value) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+
+    window.localStorage.setItem(key, value);
+  } catch (error) {
+    console.error(error);
+  }
+};
+
 const readSessionValue = (key, fallback = "") => {
   try {
     return window.sessionStorage.getItem(key) || fallback;
@@ -627,6 +659,66 @@ const writeSessionValue = (key, value) => {
   } catch (error) {
     console.error(error);
   }
+};
+
+const formatDateKey = (value = Date.now()) => {
+  const date = new Date(Number(value) || Date.now());
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatShortDateLabel = (dateKey) => {
+  const [year, month, day] = String(dateKey || "").split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return dateKey || "";
+  }
+
+  return new Date(year, month - 1, day).toLocaleDateString("en-IN", {
+    month: "short",
+    day: "numeric"
+  });
+};
+
+const createAnalyticsVisitorId = () =>
+  `vis-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+
+const readOrCreateVisitorId = () => {
+  const existing = readLocalValue(ANALYTICS_STORAGE_KEYS.visitorId, "");
+
+  if (existing) {
+    return existing;
+  }
+
+  const nextId = createAnalyticsVisitorId();
+  writeLocalValue(ANALYTICS_STORAGE_KEYS.visitorId, nextId);
+  return nextId;
+};
+
+const readOrCreateVisitorCreatedAt = () => {
+  const existing = Number(readLocalValue(ANALYTICS_STORAGE_KEYS.visitorCreatedAt, ""));
+
+  if (existing > 0) {
+    return existing;
+  }
+
+  const timestamp = Date.now();
+  writeLocalValue(ANALYTICS_STORAGE_KEYS.visitorCreatedAt, String(timestamp));
+  return timestamp;
+};
+
+const readOrCreateSessionId = () => {
+  const existing = readSessionValue(ANALYTICS_STORAGE_KEYS.sessionId, "");
+
+  if (existing) {
+    return existing;
+  }
+
+  const nextId = createId("sess");
+  writeSessionValue(ANALYTICS_STORAGE_KEYS.sessionId, nextId);
+  return nextId;
 };
 
 const canUsePersistentStore = () =>
@@ -1565,8 +1657,8 @@ const iconProps = {
   strokeLinejoin: "round"
 };
 
-const MenuIcon = () => (
-  <svg {...iconProps}>
+const MenuIcon = (props) => (
+  <svg {...iconProps} {...props}>
     <path d="M4 7h16" />
     <path d="M4 12h16" />
     <path d="M4 17h16" />
@@ -1831,6 +1923,9 @@ export default function App() {
     reason: "",
     targetUserEmail: ""
   });
+  const [visitorProfiles, setVisitorProfiles] = useState([]);
+  const [visitorDays, setVisitorDays] = useState([]);
+  const [visitorSessions, setVisitorSessions] = useState([]);
   const [, setRazorpayLoading] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -1870,6 +1965,13 @@ export default function App() {
   const activeBannerIndexRef = useRef(0);
   const persistentSaveTimerRef = useRef(null);
   const lastAuthenticatedEmailRef = useRef("");
+  const visitorTrackingRef = useRef({
+    visitorId: "",
+    visitorCreatedAt: 0,
+    sessionId: "",
+    startedAt: 0,
+    ready: false
+  });
 
   const userEmail = String(user?.email || "").toLowerCase();
   const isAdminOwner = Boolean(userEmail) && ADMIN_EMAILS.includes(userEmail);
@@ -1901,6 +2003,52 @@ export default function App() {
   const weeklySales = useMemo(() => getRangeTotal(uniqueOrders, startOfWeek()), [uniqueOrders]);
   const monthlySales = useMemo(() => getRangeTotal(uniqueOrders, startOfMonth()), [uniqueOrders]);
   const totalSales = useMemo(() => sumSales(uniqueOrders), [uniqueOrders]);
+  const todayVisitorDateKey = useMemo(() => formatDateKey(Date.now()), []);
+  const totalVisitorCount = useMemo(() => visitorProfiles.length, [visitorProfiles]);
+  const todayVisitorCount = useMemo(
+    () => visitorDays.filter((entry) => entry.dateKey === todayVisitorDateKey).length,
+    [visitorDays, todayVisitorDateKey]
+  );
+  const liveVisitorSessions = useMemo(() => {
+    const cutoff = Date.now() - LIVE_VISITOR_WINDOW_MS;
+    return visitorSessions.filter((entry) => Number(entry.lastSeenAt || 0) >= cutoff);
+  }, [visitorSessions]);
+  const liveVisitorCount = useMemo(() => {
+    const uniqueVisitorIds = new Set(
+      liveVisitorSessions.map((entry) => String(entry.visitorId || "")).filter(Boolean)
+    );
+    return uniqueVisitorIds.size;
+  }, [liveVisitorSessions]);
+  const recentVisitorActivity = useMemo(
+    () =>
+      [...liveVisitorSessions]
+        .sort((left, right) => Number(right.lastSeenAt || 0) - Number(left.lastSeenAt || 0))
+        .slice(0, LIVE_ACTIVITY_LIMIT),
+    [liveVisitorSessions]
+  );
+  const visitorTrend = useMemo(() => {
+    const countsByDate = visitorDays.reduce((accumulator, entry) => {
+      const key = String(entry.dateKey || "");
+
+      if (!key) {
+        return accumulator;
+      }
+
+      accumulator[key] = (accumulator[key] || 0) + 1;
+      return accumulator;
+    }, {});
+    const dateKeys = Object.keys(countsByDate).sort().slice(-7);
+
+    return dateKeys.map((dateKey) => ({
+      dateKey,
+      label: formatShortDateLabel(dateKey),
+      count: countsByDate[dateKey] || 0
+    }));
+  }, [visitorDays]);
+  const visitorTrendMax = useMemo(
+    () => Math.max(1, ...visitorTrend.map((entry) => Number(entry.count || 0))),
+    [visitorTrend]
+  );
   const brandMediaSource = settings.logoData
     ? resolveCloudinaryMediaUrl(settings.logoData)
     : brandHeaderVideo;
@@ -2768,6 +2916,209 @@ export default function App() {
     activePageRef.current = activePage;
     pageHistoryRef.current = history;
   }, [activePage, history]);
+
+  useEffect(() => {
+    if (!storeHydrated) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let heartbeatTimer = null;
+
+    const visitorId = readOrCreateVisitorId();
+    const visitorCreatedAt = readOrCreateVisitorCreatedAt();
+    const sessionId = readOrCreateSessionId();
+    const startedAt = visitorTrackingRef.current.startedAt || Date.now();
+
+    visitorTrackingRef.current = {
+      visitorId,
+      visitorCreatedAt,
+      sessionId,
+      startedAt,
+      ready: true
+    };
+
+    const trackVisitorActivity = async (page = activePageRef.current) => {
+      if (cancelled) {
+        return;
+      }
+
+      const timestamp = Date.now();
+      const dateKey = formatDateKey(timestamp);
+      const visitorUserAgent = String(window.navigator?.userAgent || "").slice(0, 280);
+      const normalizedPage = String(page || "home").slice(0, 80);
+
+      try {
+        await Promise.all([
+          setDoc(
+            doc(db, FIRESTORE_PATHS.visitorProfilesCollection, visitorId),
+            {
+              id: visitorId,
+              createdAt: visitorCreatedAt,
+              firstVisitDate: formatDateKey(visitorCreatedAt),
+              lastSeenAt: timestamp,
+              lastVisitDate: dateKey,
+              userAgent: visitorUserAgent
+            },
+            { merge: true }
+          ),
+          setDoc(
+            doc(db, FIRESTORE_PATHS.visitorDaysCollection, `${dateKey}__${visitorId}`),
+            {
+              id: `${dateKey}__${visitorId}`,
+              visitorId,
+              dateKey,
+              createdAt: timestamp,
+              lastSeenAt: timestamp
+            },
+            { merge: true }
+          ),
+          setDoc(
+            doc(db, FIRESTORE_PATHS.visitorSessionsCollection, sessionId),
+            {
+              id: sessionId,
+              visitorId,
+              page: normalizedPage,
+              startedAt,
+              lastSeenAt: timestamp,
+              userAgent: visitorUserAgent
+            },
+            { merge: true }
+          )
+        ]);
+      } catch (error) {
+        console.warn("Visitor analytics tracking skipped:", error?.message || error);
+      }
+    };
+
+    const runHeartbeat = async () => {
+      await trackVisitorActivity(activePageRef.current);
+
+      if (!cancelled) {
+        heartbeatTimer = window.setTimeout(runHeartbeat, VISITOR_HEARTBEAT_MS);
+      }
+    };
+
+    runHeartbeat();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        trackVisitorActivity(activePageRef.current);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+
+      if (heartbeatTimer) {
+        window.clearTimeout(heartbeatTimer);
+      }
+
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [storeHydrated]);
+
+  useEffect(() => {
+    if (!visitorTrackingRef.current.ready || !storeHydrated) {
+      return;
+    }
+
+    const visitorId = visitorTrackingRef.current.visitorId;
+    const visitorCreatedAt = visitorTrackingRef.current.visitorCreatedAt;
+    const sessionId = visitorTrackingRef.current.sessionId;
+    const startedAt = visitorTrackingRef.current.startedAt;
+    const timestamp = Date.now();
+    const dateKey = formatDateKey(timestamp);
+    const visitorUserAgent = String(window.navigator?.userAgent || "").slice(0, 280);
+    const normalizedPage = String(activePage || "home").slice(0, 80);
+
+    Promise.all([
+      setDoc(
+        doc(db, FIRESTORE_PATHS.visitorProfilesCollection, visitorId),
+        {
+          id: visitorId,
+          createdAt: visitorCreatedAt,
+          firstVisitDate: formatDateKey(visitorCreatedAt),
+          lastSeenAt: timestamp,
+          lastVisitDate: dateKey,
+          userAgent: visitorUserAgent
+        },
+        { merge: true }
+      ),
+      setDoc(
+        doc(db, FIRESTORE_PATHS.visitorDaysCollection, `${dateKey}__${visitorId}`),
+        {
+          id: `${dateKey}__${visitorId}`,
+          visitorId,
+          dateKey,
+          createdAt: timestamp,
+          lastSeenAt: timestamp
+        },
+        { merge: true }
+      ),
+      setDoc(
+        doc(db, FIRESTORE_PATHS.visitorSessionsCollection, sessionId),
+        {
+          id: sessionId,
+          visitorId,
+          page: normalizedPage,
+          startedAt,
+          lastSeenAt: timestamp,
+          userAgent: visitorUserAgent
+        },
+        { merge: true }
+      )
+    ]).catch((error) =>
+      console.warn("Visitor page tracking skipped:", error?.message || error)
+    );
+  }, [activePage, storeHydrated]);
+
+  useEffect(() => {
+    if (!hasAdminAccess || !isAdminOwner) {
+      setVisitorProfiles([]);
+      setVisitorDays([]);
+      setVisitorSessions([]);
+      return undefined;
+    }
+
+    const unsubscribeProfiles = onSnapshot(
+      collection(db, FIRESTORE_PATHS.visitorProfilesCollection),
+      (snapshot) => {
+        setVisitorProfiles(snapshot.docs.map((entry) => entry.data()));
+      },
+      (error) => {
+        console.warn("Visitor profiles sync skipped:", error?.message || error);
+      }
+    );
+
+    const unsubscribeDays = onSnapshot(
+      collection(db, FIRESTORE_PATHS.visitorDaysCollection),
+      (snapshot) => {
+        setVisitorDays(snapshot.docs.map((entry) => entry.data()));
+      },
+      (error) => {
+        console.warn("Visitor day stats sync skipped:", error?.message || error);
+      }
+    );
+
+    const unsubscribeSessions = onSnapshot(
+      collection(db, FIRESTORE_PATHS.visitorSessionsCollection),
+      (snapshot) => {
+        setVisitorSessions(snapshot.docs.map((entry) => entry.data()));
+      },
+      (error) => {
+        console.warn("Visitor sessions sync skipped:", error?.message || error);
+      }
+    );
+
+    return () => {
+      unsubscribeProfiles();
+      unsubscribeDays();
+      unsubscribeSessions();
+    };
+  }, [hasAdminAccess, isAdminOwner]);
 
   useEffect(() => {
     window.history.replaceState({ vatsauraPage: activePageRef.current }, "");
@@ -6450,34 +6801,188 @@ export default function App() {
             {adminTab === "dashboard" && (
               <>
                 <h2 style={{ marginTop: 0 }}>Dashboard</h2>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                    gap: "14px"
-                  }}
-                >
-                  {[
-                    { label: "Total Users", value: users.length },
-                    { label: "Total Sales", value: formatCurrency(totalSales) },
-                    { label: "Daily Report", value: formatCurrency(dailySales) },
-                    { label: "Weekly Report", value: formatCurrency(weeklySales) },
-                    { label: "Monthly Report", value: formatCurrency(monthlySales) },
-                    { label: "Total Orders", value: uniqueOrders.length }
-                  ].map((stat) => (
+                <div style={{ display: "grid", gap: "18px" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                      gap: "14px"
+                    }}
+                  >
+                    {[
+                      { label: "Total Users", value: users.length },
+                      { label: "Total Sales", value: formatCurrency(totalSales) },
+                      { label: "Daily Report", value: formatCurrency(dailySales) },
+                      { label: "Weekly Report", value: formatCurrency(weeklySales) },
+                      { label: "Monthly Report", value: formatCurrency(monthlySales) },
+                      { label: "Total Orders", value: uniqueOrders.length }
+                    ].map((stat) => (
+                      <div
+                        key={stat.label}
+                        style={{
+                          border: `1px solid ${tone.line}`,
+                          borderRadius: "18px",
+                          padding: "18px",
+                          background: tone.soft
+                        }}
+                      >
+                        <p style={{ margin: "0 0 8px", color: tone.muted }}>{stat.label}</p>
+                        <h3 style={{ margin: 0 }}>{stat.value}</h3>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div
+                    style={{
+                      border: `1px solid ${tone.line}`,
+                      borderRadius: "18px",
+                      padding: "18px",
+                      background: tone.soft,
+                      display: "grid",
+                      gap: "18px"
+                    }}
+                  >
+                    <div>
+                      <h3 style={{ margin: "0 0 6px" }}>Visitor Analytics</h3>
+                      <p style={{ margin: 0, color: tone.muted }}>
+                        Live visitor tracking based on real storefront visits and unique browser IDs.
+                      </p>
+                    </div>
+
                     <div
-                      key={stat.label}
                       style={{
-                        border: `1px solid ${tone.line}`,
-                        borderRadius: "18px",
-                        padding: "18px",
-                        background: tone.soft
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: "14px"
                       }}
                     >
-                      <p style={{ margin: "0 0 8px", color: tone.muted }}>{stat.label}</p>
-                      <h3 style={{ margin: 0 }}>{stat.value}</h3>
+                      {[
+                        { label: "Total Visitors", value: totalVisitorCount },
+                        { label: "Today's Visitors", value: todayVisitorCount },
+                        { label: "Live Visitors", value: liveVisitorCount }
+                      ].map((stat) => (
+                        <div
+                          key={stat.label}
+                          style={{
+                            border: `1px solid ${tone.line}`,
+                            borderRadius: "18px",
+                            padding: "18px",
+                            background: tone.white
+                          }}
+                        >
+                          <p style={{ margin: "0 0 8px", color: tone.muted }}>{stat.label}</p>
+                          <h3 style={{ margin: 0 }}>{stat.value}</h3>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
+                        gap: "16px"
+                      }}
+                    >
+                      <div
+                        style={{
+                          border: `1px solid ${tone.line}`,
+                          borderRadius: "18px",
+                          padding: "18px",
+                          background: tone.white,
+                          display: "grid",
+                          gap: "16px"
+                        }}
+                      >
+                        <div>
+                          <p style={{ margin: "0 0 6px", color: tone.muted }}>Last 7 Days</p>
+                          <h4 style={{ margin: 0 }}>Unique Visitor Trend</h4>
+                        </div>
+                        {visitorTrend.length > 0 ? (
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: `repeat(${visitorTrend.length}, minmax(0, 1fr))`,
+                              gap: "12px",
+                              alignItems: "end",
+                              minHeight: "220px"
+                            }}
+                          >
+                            {visitorTrend.map((entry) => (
+                              <div
+                                key={entry.dateKey}
+                                style={{
+                                  display: "grid",
+                                  gap: "10px",
+                                  justifyItems: "center",
+                                  alignItems: "end"
+                                }}
+                              >
+                                <strong style={{ fontSize: "13px" }}>{entry.count}</strong>
+                                <div
+                                  style={{
+                                    width: "100%",
+                                    maxWidth: "44px",
+                                    height: `${Math.max(
+                                      18,
+                                      Math.round((Number(entry.count || 0) / visitorTrendMax) * 140)
+                                    )}px`,
+                                    borderRadius: "14px 14px 6px 6px",
+                                    background: tone.black
+                                  }}
+                                />
+                                <span style={{ fontSize: "12px", color: tone.muted }}>{entry.label}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p style={{ margin: 0, color: tone.muted }}>
+                            Visitor trend will appear as real visits start getting recorded.
+                          </p>
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          border: `1px solid ${tone.line}`,
+                          borderRadius: "18px",
+                          padding: "18px",
+                          background: tone.white,
+                          display: "grid",
+                          gap: "14px",
+                          alignContent: "start"
+                        }}
+                      >
+                        <div>
+                          <p style={{ margin: "0 0 6px", color: tone.muted }}>Real Time</p>
+                          <h4 style={{ margin: 0 }}>Live Activity</h4>
+                        </div>
+                        {recentVisitorActivity.length > 0 ? (
+                          recentVisitorActivity.map((entry) => (
+                            <div
+                              key={entry.id}
+                              style={{
+                                border: `1px solid ${tone.line}`,
+                                borderRadius: "14px",
+                                padding: "12px 14px",
+                                background: tone.soft
+                              }}
+                            >
+                              <strong style={{ display: "block", marginBottom: "4px" }}>
+                                {String(entry.page || "home").replace(/^\w/, (value) => value.toUpperCase())}
+                              </strong>
+                              <span style={{ color: tone.muted, fontSize: "13px" }}>
+                                Active {formatDateTimeLabel(entry.lastSeenAt)}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <p style={{ margin: 0, color: tone.muted }}>
+                            No live visitors detected in the last 2 minutes.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </>
             )}
@@ -8569,15 +9074,22 @@ export default function App() {
             className="icon-button"
             style={{
               ...rightIconButton,
+              border: "none",
+              borderRadius: 0,
+              background: "transparent",
               width: "46px",
               height: "46px"
             }}
             aria-label="Menu"
           >
-            <MenuIcon />
+            <MenuIcon width={40} height={40} strokeWidth={3.4} />
           </button>
 
-          <div className="nav-menu-group" style={{ position: "relative" }} ref={tshirtRef}>
+          <div
+            className="nav-menu-group nav-menu-group--desktop"
+            style={{ position: "relative" }}
+            ref={tshirtRef}
+          >
             <button
               onClick={() => setShowTshirtMenu((prev) => !prev)}
               className="nav-link-button"
